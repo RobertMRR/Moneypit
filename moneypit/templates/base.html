@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Moneypit</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://unpkg.com/htmx.org@2.0.3" integrity="sha384-0895/pl2MU10Hqc6jd4RvrthNlDiE9U1tWmX7WRESftEDRosgxNsQG/Ze9YMRzHq" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #60a5fa;
+      --danger: #f87171;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      padding: 1.5rem 2rem;
+      border-bottom: 1px solid #334155;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    header h1 { margin: 0; font-size: 1.5rem; }
+    header .muted { color: var(--muted); font-size: 0.9rem; }
+    main { max-width: 1100px; margin: 0 auto; padding: 2rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+    @media (max-width: 720px) {
+      .stats { grid-template-columns: 1fr; }
+    }
+    .card {
+      background: var(--card);
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+    }
+    .card h2 { margin: 0 0 1rem; font-size: 1.05rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th, td { text-align: left; padding: 0.4rem 0; border-bottom: 1px solid #334155; }
+    th { color: var(--muted); font-weight: 500; }
+    .amt-neg { color: var(--danger); }
+    .amt-pos { color: #4ade80; }
+    .pill {
+      display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px;
+      font-size: 0.75rem; background: #334155; color: var(--text);
+    }
+    form.upload {
+      display: flex; gap: 0.5rem; align-items: center;
+    }
+    form.upload input[type=file] { color: var(--muted); }
+    form.upload button {
+      background: var(--accent); color: #0f172a; border: 0; padding: 0.5rem 1rem;
+      border-radius: 6px; font-weight: 600; cursor: pointer;
+    }
+    .big-number { font-size: 2rem; font-weight: 600; }
+
+    /* Inline categorize form */
+    .fix-btn {
+      background: none; border: 1px solid #475569; color: var(--muted);
+      padding: 0.15rem 0.55rem; border-radius: 4px; cursor: pointer; font-size: 0.75rem;
+    }
+    .fix-btn:hover { color: var(--text); border-color: var(--accent); }
+    .fix-form {
+      display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap;
+    }
+    .fix-form select, .fix-form input {
+      background: #0f172a; color: var(--text); border: 1px solid #475569;
+      padding: 0.25rem 0.4rem; border-radius: 4px; font-size: 0.85rem;
+    }
+    .fix-form input { width: 140px; }
+    .fix-form button {
+      background: var(--accent); color: #0f172a; border: 0;
+      padding: 0.3rem 0.7rem; border-radius: 4px; cursor: pointer; font-weight: 600;
+      font-size: 0.8rem;
+    }
+    .fix-form label {
+      font-size: 0.75rem; color: var(--muted);
+      display: flex; align-items: center; gap: 0.2rem;
+    }
+    .flash {
+      font-size: 0.75rem; color: #4ade80; margin-left: 0.5rem;
+    }
+    nav a {
+      color: var(--muted); text-decoration: none; margin-right: 1rem;
+    }
+    nav a:hover { color: var(--text); }
+    nav a.active { color: var(--text); }
+
+    /* Date range filter */
+    .range-bar {
+      display: flex; justify-content: space-between; align-items: center;
+      flex-wrap: wrap; gap: 1rem;
+    }
+    .presets { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .preset {
+      padding: 0.3rem 0.7rem; border-radius: 999px; font-size: 0.8rem;
+      text-decoration: none; color: var(--muted); border: 1px solid #334155;
+    }
+    .preset:hover { color: var(--text); border-color: #475569; }
+    .preset.active {
+      background: var(--accent); color: #0f172a; border-color: var(--accent);
+      font-weight: 600;
+    }
+    .range-form { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    .range-form label { font-size: 0.8rem; color: var(--muted); display: flex; gap: 0.3rem; align-items: center; }
+    .range-form input[type=date] {
+      background: #0f172a; color: var(--text); border: 1px solid #475569;
+      padding: 0.3rem 0.5rem; border-radius: 4px; font-size: 0.85rem;
+      color-scheme: dark;
+    }
+    .range-form button {
+      background: #334155; color: var(--text); border: 0;
+      padding: 0.35rem 0.8rem; border-radius: 4px; cursor: pointer; font-size: 0.85rem;
+    }
+    .range-form button:hover { background: #475569; }
+
+    /* Category + search filter form on /transactions */
+    .filter-form { display: flex; gap: 0.8rem; align-items: flex-end; flex-wrap: wrap; }
+    .filter-form label {
+      font-size: 0.75rem; color: var(--muted);
+      display: flex; flex-direction: column; gap: 0.25rem;
+    }
+    .filter-form select, .filter-form input[type=search] {
+      background: #0f172a; color: var(--text); border: 1px solid #475569;
+      padding: 0.35rem 0.55rem; border-radius: 4px; font-size: 0.9rem;
+      min-width: 180px;
+    }
+    .filter-form button {
+      background: var(--accent); color: #0f172a; border: 0;
+      padding: 0.4rem 0.9rem; border-radius: 4px; cursor: pointer; font-weight: 600;
+      font-size: 0.85rem; align-self: flex-end;
+    }
+
+    /* Pagination */
+    .pagination {
+      display: flex; justify-content: center; gap: 1.5rem; align-items: center;
+      padding: 1rem 0 0; font-size: 0.9rem;
+    }
+    .pagination a { color: var(--accent); text-decoration: none; }
+    .pagination a:hover { text-decoration: underline; }
+    .pagination .disabled { color: #475569; }
+
+    /* Import page */
+    .flash-card { border-left: 3px solid #4ade80; }
+    .flash-error { border-left: 3px solid var(--danger); color: var(--danger); }
+    .import-form { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 1rem; }
+    .import-form input[type=file] { color: var(--muted); flex: 1; min-width: 200px; }
+    .import-form button {
+      background: var(--accent); color: #0f172a; border: 0;
+      padding: 0.5rem 1rem; border-radius: 6px; font-weight: 600; cursor: pointer;
+    }
+    .manual-form {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem 1rem; margin-top: 1rem;
+    }
+    .manual-form label {
+      display: flex; flex-direction: column; gap: 0.3rem;
+      font-size: 0.8rem; color: var(--muted);
+    }
+    .manual-form label.wide { grid-column: 1 / -1; }
+    .manual-form input, .manual-form select {
+      background: #0f172a; color: var(--text); border: 1px solid #475569;
+      padding: 0.4rem 0.55rem; border-radius: 4px; font-size: 0.9rem;
+    }
+    .manual-form input[type=date] { color-scheme: dark; }
+    .manual-form button {
+      background: var(--accent); color: #0f172a; border: 0;
+      padding: 0.55rem 1rem; border-radius: 6px; font-weight: 600; cursor: pointer;
+      font-size: 0.9rem; justify-self: start;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1 style="margin-bottom: 0.3rem;">Moneypit</h1>
+      <nav>
+        <a href="/">Dashboard</a>
+        <a href="/transactions">Transactions</a>
+        <a href="/import">Import</a>
+        <a href="/rules">Rules</a>
+      </nav>
+    </div>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

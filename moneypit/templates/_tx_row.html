@@ -1,0 +1,37 @@
+{#
+  Single transaction row. Rendered inline on the dashboard and also returned
+  standalone by POST /transactions/{id}/categorize for HTMX swaps.
+
+  The row ID is used as the HTMX swap target so the inline edit form replaces
+  just this row after a save.
+#}
+<tr id="tx-{{ t.id }}">
+  <td>{{ t.date }}</td>
+  <td>{{ t.vendor or t.description }}</td>
+  <td>
+    {% if t.category == "Uncategorized" %}
+      <form class="fix-form"
+            hx-post="/transactions/{{ t.id }}/categorize"
+            hx-target="#tx-{{ t.id }}"
+            hx-swap="outerHTML">
+        <select name="category" required>
+          {% for c in categories %}
+            <option value="{{ c }}" {% if c == "Shopping" %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+        <input name="pattern" type="text"
+               value="{{ suggest_pattern(t.description) }}"
+               placeholder="rule pattern"
+               title="Substring to match on future transactions. Leave blank to only fix this one.">
+        <label><input type="checkbox" name="create_rule" value="1" checked> remember</label>
+        <button type="submit">Save</button>
+      </form>
+    {% else %}
+      <span class="pill">{{ t.category }}</span>
+      {% if flash_count %}<span class="flash">✓ {{ flash_count }} updated</span>{% endif %}
+    {% endif %}
+  </td>
+  <td style="text-align:right" class="{{ 'amt-neg' if t.amount < 0 else 'amt-pos' }}">
+    {{ "%.2f"|format(t.amount) }} {{ t.currency }}
+  </td>
+</tr>

@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% if imported is not none %}
+  <div class="card flash-card" style="margin-bottom: 1.5rem;">
+    Imported {{ imported }} transaction{% if imported != 1 %}s{% endif %} from
+    <strong>{{ bank }}</strong>
+    {% if skipped %}· skipped {{ skipped }} duplicate{% if skipped != 1 %}s{% endif %}{% endif %}.
+  </div>
+{% elif added %}
+  <div class="card flash-card" style="margin-bottom: 1.5rem;">
+    Transaction added.
+  </div>
+{% elif error %}
+  <div class="card flash-error" style="margin-bottom: 1.5rem;">
+    {{ error }}
+  </div>
+{% endif %}
+
+<div class="grid">
+
+  <div class="card">
+    <h2>Import bank CSV</h2>
+    <p class="muted" style="font-size: 0.85rem;">
+      Drop an export from Pekao, ING, or mBank. Duplicate rows are skipped automatically.
+    </p>
+    <form action="/import/csv" method="post" enctype="multipart/form-data" class="import-form">
+      <input type="file" name="file" accept=".csv" required>
+      <button type="submit">Upload</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Add transaction manually</h2>
+    <p class="muted" style="font-size: 0.85rem;">
+      For cash purchases, receipts, or anything the bank doesn't see.
+    </p>
+    <form action="/transactions" method="post" class="manual-form">
+      <label>
+        Date
+        <input type="date" name="date" value="{{ today }}" required>
+      </label>
+      <label>
+        Amount
+        <input type="number" name="amount" step="0.01" min="0" placeholder="0.00" required>
+      </label>
+      <label>
+        Direction
+        <select name="direction">
+          <option value="spend" selected>Expense</option>
+          <option value="income">Income</option>
+        </select>
+      </label>
+      <label>
+        Currency
+        <input type="text" name="currency" value="PLN" maxlength="3">
+      </label>
+      <label class="wide">
+        Vendor
+        <input type="text" name="vendor" placeholder="e.g. Biedronka">
+      </label>
+      <label class="wide">
+        Description
+        <input type="text" name="description" placeholder="optional, e.g. weekly groceries">
+      </label>
+      <label class="wide">
+        Category
+        <select name="category">
+          <option value="">Auto-detect from rules</option>
+          {% for c in categories %}
+            <option value="{{ c }}">{{ c }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit" class="wide">Add transaction</button>
+    </form>
+  </div>
+
+</div>
+
+{% endblock %}

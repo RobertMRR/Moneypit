@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+dist/
+build/
+
+# Secrets & credentials
+.env
+.env.*
+!.env.example
+token.json
+credentials.json
+*.pickle
+*.pem
+*.key
+
+# Databases & user data
+moneypit.db
+moneypit.db-journal
+moneypit.db-wal
+moneypit.db-shm
+data/
+
+# Bank exports — never commit real financial data
+*.csv
+*.xlsx
+*.xls
+*.ofx
+*.qif
+*.pdf
+!tests/fixtures/*.csv
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

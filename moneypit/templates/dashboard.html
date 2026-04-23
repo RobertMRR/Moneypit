@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="card range-bar" style="margin-bottom: 1.5rem;">
+  <div class="presets">
+    {% for label, pfrom, pto in presets %}
+      {% if pfrom or pto %}
+        {% set href = '/?from=' ~ pfrom ~ '&to=' ~ pto %}
+        {% set active = (range_from == pfrom and range_to == pto) %}
+      {% else %}
+        {% set href = '/' %}
+        {% set active = is_default_range %}
+      {% endif %}
+      <a class="preset {% if active %}active{% endif %}" href="{{ href }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+  <form method="get" action="/" class="range-form">
+    <label>From <input type="date" name="from" value="{{ range_from }}"></label>
+    <label>To <input type="date" name="to" value="{{ range_to }}"></label>
+    <button type="submit">Apply</button>
+  </form>
+</div>
+
+<div class="stats" style="margin-bottom: 1.5rem;">
+  <div class="card">
+    <h2>Income · {{ range_label }}</h2>
+    <div class="big-number amt-pos">{{ "%.2f"|format(total_income) }} PLN</div>
+  </div>
+  <div class="card">
+    <h2>Spent · {{ range_label }}</h2>
+    <div class="big-number amt-neg">{{ "%.2f"|format(total_spend) }} PLN</div>
+  </div>
+  <div class="card">
+    <h2>Net · {{ range_label }}</h2>
+    <div class="big-number {{ 'amt-pos' if net >= 0 else 'amt-neg' }}">
+      {{ "%+.2f"|format(net) }} PLN
+    </div>
+  </div>
+</div>
+
+<div class="grid">
+
+  <div class="card">
+    <h2>By category</h2>
+    {% if by_category %}
+    <table>
+      <tr><th>Category</th><th style="text-align:right">Spent</th><th style="text-align:right">#</th></tr>
+      {% for row in by_category %}
+      <tr>
+        <td>{{ row.category or "Uncategorized" }}</td>
+        <td style="text-align:right">{{ "%.2f"|format(row.total) }}</td>
+        <td style="text-align:right">{{ row.n }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p class="muted">No transactions yet. Import a CSV to get started.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Top vendors</h2>
+    {% if top_vendors %}
+    <table>
+      <tr><th>Vendor</th><th style="text-align:right">Spent</th><th style="text-align:right">#</th></tr>
+      {% for row in top_vendors %}
+      <tr>
+        <td>{{ row.vendor }}</td>
+        <td style="text-align:right">{{ "%.2f"|format(row.total) }}</td>
+        <td style="text-align:right">{{ row.n }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p class="muted">No data yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Recurring charges</h2>
+    {% if recurring %}
+    <table>
+      <tr><th>Vendor</th><th>Cadence</th><th style="text-align:right">Avg</th></tr>
+      {% for r in recurring %}
+      <tr>
+        <td>{{ r.vendor }}</td>
+        <td><span class="pill">{{ r.cadence }}</span></td>
+        <td style="text-align:right">{{ "%.2f"|format(r.avg_amount) }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p class="muted">Need at least 2 charges from the same vendor to detect recurring.</p>
+    {% endif %}
+  </div>
+
+</div>
+
+{% if uncategorized %}
+<div class="card" style="margin-top: 1.5rem;">
+  <h2>Needs categorizing · {{ uncategorized|length }}</h2>
+  <p class="muted" style="margin-top: -0.5rem; font-size: 0.85rem;">
+    Pick a category and hit Save. With "remember" checked, it saves a rule and retroactively categorizes every matching transaction.
+  </p>
+  <table>
+    <tr>
+      <th>Date</th><th>Vendor / Description</th>
+      <th style="width: 55%">Category &amp; rule</th>
+      <th style="text-align:right">Amount</th>
+    </tr>
+    {% for t in uncategorized %}
+      {% include "_tx_row.html" %}
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+<div class="card" style="margin-top: 1.5rem;">
+  <h2>Recent transactions</h2>
+  {% if recent %}
+  <table>
+    <tr><th>Date</th><th>Vendor / Description</th><th>Category</th><th style="text-align:right">Amount</th></tr>
+    {% for t in recent %}
+      {% include "_tx_row.html" %}
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">Nothing imported yet.</p>
+  {% endif %}
+</div>
+
+{% endblock %}

@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block content %}
+
+{# Shared filter state for preset links — preserve category + search when
+   clicking a preset so you don't lose them. #}
+{% macro preset_href(pfrom, pto) -%}
+  {% set parts = [] -%}
+  {% if pfrom %}{% set _ = parts.append('from=' ~ pfrom) %}{% endif %}
+  {% if pto %}{% set _ = parts.append('to=' ~ pto) %}{% endif %}
+  {% if category %}{% set _ = parts.append('category=' ~ category) %}{% endif %}
+  {% if q %}{% set _ = parts.append('q=' ~ q) %}{% endif %}
+  /transactions{% if parts %}?{{ parts|join('&') }}{% endif %}
+{%- endmacro %}
+
+<div class="card range-bar" style="margin-bottom: 1.5rem;">
+  <div class="presets">
+    {% for label, pfrom, pto in presets %}
+      {% if pfrom or pto %}
+        {% set active = (range_from == pfrom and range_to == pto) %}
+      {% else %}
+        {% set active = is_default_range %}
+      {% endif %}
+      <a class="preset {% if active %}active{% endif %}" href="{{ preset_href(pfrom, pto)|trim }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+  <form method="get" action="/transactions" class="range-form">
+    <label>From <input type="date" name="from" value="{{ range_from }}"></label>
+    <label>To <input type="date" name="to" value="{{ range_to }}"></label>
+    {% if category %}<input type="hidden" name="category" value="{{ category }}">{% endif %}
+    {% if q %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
+    <button type="submit">Apply</button>
+  </form>
+</div>
+
+<div class="card" style="margin-bottom: 1.5rem;">
+  <form method="get" action="/transactions" class="filter-form">
+    <input type="hidden" name="from" value="{{ range_from }}">
+    <input type="hidden" name="to" value="{{ range_to }}">
+    <label>
+      Category
+      <select name="category">
+        <option value="">All</option>
+        {% for c in categories %}
+          <option value="{{ c }}" {% if c == category %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Search
+      <input type="search" name="q" value="{{ q }}" placeholder="vendor or description">
+    </label>
+    <button type="submit">Filter</button>
+    {% if category or q %}
+      <a href="/transactions?from={{ range_from }}&to={{ range_to }}" class="muted" style="font-size: 0.85rem;">Clear filters</a>
+    {% endif %}
+  </form>
+</div>
+
+<div class="stats" style="margin-bottom: 1.5rem;">
+  <div class="card">
+    <h2>Matching · {{ range_label }}</h2>
+    <div class="big-number">{{ total }}</div>
+  </div>
+  <div class="card">
+    <h2>Income</h2>
+    <div class="big-number amt-pos">{{ "%.2f"|format(sums.income) }} PLN</div>
+  </div>
+  <div class="card">
+    <h2>Spent</h2>
+    <div class="big-number amt-neg">{{ "%.2f"|format(sums.spent) }} PLN</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Transactions</h2>
+  {% if rows %}
+  <table>
+    <tr>
+      <th>Date</th><th>Vendor / Description</th>
+      <th>Category</th><th style="text-align:right">Amount</th>
+    </tr>
+    {% for t in rows %}
+      {% include "_tx_row.html" %}
+    {% endfor %}
+  </table>
+
+  {% if total_pages > 1 %}
+  <div class="pagination">
+    {% set qs -%}
+      from={{ range_from }}&to={{ range_to }}
+      {%- if category %}&category={{ category }}{% endif -%}
+      {%- if q %}&q={{ q }}{% endif -%}
+    {%- endset %}
+    {% if page > 1 %}
+      <a href="/transactions?{{ qs }}&page={{ page - 1 }}">← Prev</a>
+    {% else %}
+      <span class="disabled">← Prev</span>
+    {% endif %}
+    <span class="muted">Page {{ page }} of {{ total_pages }}</span>
+    {% if page < total_pages %}
+      <a href="/transactions?{{ qs }}&page={{ page + 1 }}">Next →</a>
+    {% else %}
+      <span class="disabled">Next →</span>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% else %}
+  <p class="muted">No transactions match these filters.</p>
+  {% endif %}
+</div>
+
+{% endblock %}
