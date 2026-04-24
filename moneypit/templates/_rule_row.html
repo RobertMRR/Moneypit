@@ -1,0 +1,70 @@
+{#
+  Single rule row. Rendered inline in either display mode (default) or edit
+  mode (when `edit` is truthy in the context). Inline htmx swaps the row in
+  and out of edit mode without a full page reload.
+#}
+<tr id="rule-{{ r.id }}">
+{% if edit %}
+  <td colspan="5">
+    <form class="fix-form"
+          hx-post="/rules/{{ r.id }}"
+          hx-target="#rule-{{ r.id }}"
+          hx-swap="outerHTML"
+          style="flex-wrap: wrap;">
+      <label style="display: flex; flex-direction: column; gap: 0.2rem;">
+        <span>Pattern</span>
+        <input name="pattern" type="text" value="{{ r.pattern }}" required
+               style="width: 180px;">
+      </label>
+      <label style="display: flex; flex-direction: column; gap: 0.2rem;">
+        <span>Category</span>
+        <select name="category" required
+                onchange="this.parentElement.nextElementSibling.style.display = this.value === '__new__' ? 'flex' : 'none'; if (this.value === '__new__') this.parentElement.nextElementSibling.querySelector('input').focus();">
+          {% for c in categories %}
+            <option value="{{ c }}" {% if c == r.category %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+          <option value="__new__">+ New category…</option>
+        </select>
+      </label>
+      <label style="display: none; flex-direction: column; gap: 0.2rem;">
+        <span>New name</span>
+        <input type="text" name="category_new" placeholder="new category">
+      </label>
+      <label style="display: flex; flex-direction: column; gap: 0.2rem;">
+        <span>Vendor</span>
+        <input name="vendor" type="text" value="{{ r.vendor or '' }}"
+               placeholder="(optional)" style="width: 140px;">
+      </label>
+      <label style="display: flex; flex-direction: column; gap: 0.2rem;">
+        <span>Priority</span>
+        <input name="priority" type="number" value="{{ r.priority }}" min="0"
+               style="width: 70px;">
+      </label>
+      <button type="submit">Save</button>
+      <a class="fix-btn" href="/rules"
+         hx-get="/rules/{{ r.id }}/row"
+         hx-target="#rule-{{ r.id }}"
+         hx-swap="outerHTML"
+         style="text-decoration: none; display: inline-block;">Cancel</a>
+    </form>
+  </td>
+{% else %}
+  <td><code>{{ r.pattern }}</code></td>
+  <td><span class="pill">{{ r.category }}</span></td>
+  <td>{{ r.vendor or "" }}</td>
+  <td style="text-align:right">{{ r.priority }}</td>
+  <td style="text-align:right; white-space: nowrap;">
+    {% if flash_count is defined and flash_count is not none %}
+      <span class="flash">✓ {{ flash_count }} updated</span>
+    {% endif %}
+    <button class="fix-btn" type="button"
+            hx-get="/rules/{{ r.id }}/edit"
+            hx-target="#rule-{{ r.id }}"
+            hx-swap="outerHTML">Edit</button>
+    <form method="post" action="/rules/{{ r.id }}/delete" style="display:inline"
+          onsubmit="return confirm('Delete this rule? Transactions already categorized by it will keep their category.');">
+      <button class="fix-btn" type="submit">Delete</button>
+    </form>
+  </td>
+{% endif %}
+</tr>

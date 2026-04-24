@@ -14,11 +14,15 @@
             hx-post="/transactions/{{ t.id }}/categorize"
             hx-target="#tx-{{ t.id }}"
             hx-swap="outerHTML">
-        <select name="category" required>
+        <select name="category" required
+                onchange="this.nextElementSibling.style.display = this.value === '__new__' ? 'inline-block' : 'none'; if (this.value === '__new__') this.nextElementSibling.focus();">
           {% for c in categories %}
             <option value="{{ c }}" {% if c == "Shopping" %}selected{% endif %}>{{ c }}</option>
           {% endfor %}
+          <option value="__new__">+ New category…</option>
         </select>
+        <input name="category_new" type="text" placeholder="new category name"
+               style="display: none;" title="Name for the new category">
         <input name="pattern" type="text"
                value="{{ suggest_pattern(t.description) }}"
                placeholder="rule pattern"

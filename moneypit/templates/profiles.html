@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% if error %}
+  <div class="card flash-error" style="margin-bottom: 1.5rem;">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+  <h2>Profiles</h2>
+  <p class="muted" style="font-size: 0.85rem;">
+    Profiles tag transactions with whose account they came from — useful for a shared
+    household budget where each partner imports their own bank CSVs. The dashboard
+    shows "Both" by default; switch to a single profile to see just their spending.
+  </p>
+
+  {% for p in profiles %}
+    <div class="profile-row">
+      <span class="swatch" style="background: {{ p.color or '#94a3b8' }};"></span>
+      <span class="name">{{ p.name }}</span>
+      <span class="count">{{ p.tx_count }} transaction{% if p.tx_count != 1 %}s{% endif %}</span>
+      {% if p.name != default_name %}
+        <form action="/profiles/{{ p.id }}/delete" method="post"
+              onsubmit="return confirm('Delete profile {{ p.name }}? Its transactions will be re-tagged to {{ default_name }}.');">
+          <button type="submit" class="danger">Delete</button>
+        </form>
+      {% else %}
+        <span class="count" title="Default profile — new imports fall back to this">default</span>
+      {% endif %}
+    </div>
+  {% endfor %}
+
+  <form action="/profiles" method="post" class="profile-form">
+    <label>
+      Name
+      <input type="text" name="name" placeholder="e.g. Partner" required>
+    </label>
+    <label>
+      Color
+      <input type="color" name="color" value="#f472b6">
+    </label>
+    <button type="submit">Add profile</button>
+  </form>
+</div>
+
+{% endblock %}

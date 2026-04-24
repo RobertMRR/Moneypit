@@ -108,3 +108,98 @@ def create_rule_and_recategorize(
             updated += 1
 
     return {"rule_id": rule_id, "updated": updated}
+
+
+def update_rule_and_recategorize(
+    conn: sqlite3.Connection,
+    rule_id: int,
+    pattern: str,
+    category: str,
+    vendor: str | None = None,
+    priority: int | None = None,
+) -> dict:
+    """
+    Update an existing rule and re-apply categorization retroactively.
+
+    Two-pass fix so a rename doesn't strand rows:
+      1. Find transactions likely tagged by the *old* rule — i.e. those whose
+         text matched the old pattern AND whose current category is the old
+         category. Clear them and re-run `apply_rules` so the next matching
+         rule (or "Uncategorized") takes over.
+      2. Apply the new pattern/category to any transaction now matching it.
+
+    Returns the number of transactions whose category or vendor changed.
+    """
+    from .categorize import apply_rules
+    from .models import Transaction
+    from datetime import date as date_cls
+
+    pattern = pattern.strip()
+    if not pattern:
+        raise ValueError("pattern cannot be empty")
+
+    old = conn.execute(
+        "SELECT pattern, category, vendor FROM rules WHERE id = ?", (rule_id,)
+    ).fetchone()
+    if old is None:
+        raise ValueError(f"rule {rule_id} not found")
+
+    old_needle = _normalize(old["pattern"])
+    old_category = old["category"]
+
+    update_sql = "UPDATE rules SET pattern = ?, category = ?, vendor = ?"
+    params: list = [pattern, category, vendor or None]
+    if priority is not None:
+        update_sql += ", priority = ?"
+        params.append(priority)
+    update_sql += " WHERE id = ?"
+    params.append(rule_id)
+    conn.execute(update_sql, params)
+
+    all_rows = conn.execute(
+        "SELECT id, date, amount, currency, description, vendor, category, op_type "
+        "FROM transactions"
+    ).fetchall()
+
+    changed = 0
+    new_needle = _normalize(pattern)
+
+    for row in all_rows:
+        haystack = _normalize(f"{row['description'] or ''} {row['vendor'] or ''}")
+        orig_category = row["category"]
+        orig_vendor = row["vendor"]
+
+        was_tagged_by_old = (old_needle in haystack) and (row["category"] == old_category)
+        matches_new = new_needle in haystack
+
+        if matches_new:
+            new_vendor = vendor or row["vendor"]
+            if row["category"] != category or new_vendor != row["vendor"]:
+                conn.execute(
+                    "UPDATE transactions SET category = ?, vendor = COALESCE(?, vendor) WHERE id = ?",
+                    (category, vendor, row["id"]),
+                )
+                changed += 1
+        elif was_tagged_by_old:
+            # Old pattern matched and old category was applied, but new pattern
+            # doesn't match — rerun the rules engine to find a replacement.
+            # Instantiate a bare Transaction so apply_rules can fill category.
+            tx = Transaction(
+                date=date_cls.fromisoformat(row["date"]),
+                amount=row["amount"],
+                currency=row["currency"] if "currency" in row.keys() else "PLN",
+                description=row["description"] or "",
+                vendor=row["vendor"],
+                category=None,
+                op_type=row["op_type"],
+            )
+            apply_rules(tx, conn)
+            new_category = tx.category or "Uncategorized"
+            if new_category != orig_category or tx.vendor != orig_vendor:
+                conn.execute(
+                    "UPDATE transactions SET category = ?, vendor = ? WHERE id = ?",
+                    (new_category, tx.vendor, row["id"]),
+                )
+                changed += 1
+
+    return {"rule_id": rule_id, "updated": changed}

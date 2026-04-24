@@ -1,15 +1,41 @@
 {% extends "base.html" %}
 {% block content %}
 
-{# Shared filter state for preset links — preserve category + search when
-   clicking a preset so you don't lose them. #}
+{# Shared filter state for preset links — preserve category + search + profile
+   + sort when clicking a preset so you don't lose them. #}
 {% macro preset_href(pfrom, pto) -%}
   {% set parts = [] -%}
   {% if pfrom %}{% set _ = parts.append('from=' ~ pfrom) %}{% endif %}
   {% if pto %}{% set _ = parts.append('to=' ~ pto) %}{% endif %}
   {% if category %}{% set _ = parts.append('category=' ~ category) %}{% endif %}
   {% if q %}{% set _ = parts.append('q=' ~ q) %}{% endif %}
+  {% if profile_id %}{% set _ = parts.append('profile=' ~ profile_id) %}{% endif %}
+  {% if kind %}{% set _ = parts.append('kind=' ~ kind) %}{% endif %}
+  {% if sort != 'date' or dir != 'desc' %}
+    {% set _ = parts.append('sort=' ~ sort) %}{% set _ = parts.append('dir=' ~ dir) %}
+  {% endif %}
   /transactions{% if parts %}?{{ parts|join('&') }}{% endif %}
+{%- endmacro %}
+
+{# Clickable column header. Clicking toggles dir if the column is already
+   active, otherwise switches to that column with a sensible default
+   direction (desc for date/amount, asc for vendor/category). #}
+{% macro sort_header(key, label, align='left') -%}
+  {% if sort == key %}
+    {% set next_dir = 'asc' if dir == 'desc' else 'desc' %}
+    {% set arrow = ' ↓' if dir == 'desc' else ' ↑' %}
+  {% else %}
+    {% set next_dir = 'desc' if key in ('date', 'amount') else 'asc' %}
+    {% set arrow = '' %}
+  {% endif %}
+  {% set parts = ['from=' ~ range_from, 'to=' ~ range_to, 'sort=' ~ key, 'dir=' ~ next_dir] %}
+  {% if category %}{% set _ = parts.append('category=' ~ category) %}{% endif %}
+  {% if q %}{% set _ = parts.append('q=' ~ q) %}{% endif %}
+  {% if profile_id %}{% set _ = parts.append('profile=' ~ profile_id) %}{% endif %}
+  {% if kind %}{% set _ = parts.append('kind=' ~ kind) %}{% endif %}
+  <th style="text-align:{{ align }}">
+    <a href="/transactions?{{ parts|join('&') }}" class="sort-link {% if sort == key %}active{% endif %}">{{ label }}{{ arrow }}</a>
+  </th>
 {%- endmacro %}
 
 <div class="card range-bar" style="margin-bottom: 1.5rem;">
@@ -24,18 +50,85 @@
     {% endfor %}
   </div>
   <form method="get" action="/transactions" class="range-form">
-    <label>From <input type="date" name="from" value="{{ range_from }}"></label>
-    <label>To <input type="date" name="to" value="{{ range_to }}"></label>
+    <label>From <input type="date" name="from" value="{{ range_from }}" min="{{ range_min }}"></label>
+    <label>To <input type="date" name="to" value="{{ range_to }}" min="{{ range_min }}"></label>
     {% if category %}<input type="hidden" name="category" value="{{ category }}">{% endif %}
     {% if q %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
+    {% if profile_id %}<input type="hidden" name="profile" value="{{ profile_id }}">{% endif %}
+    {% if kind %}<input type="hidden" name="kind" value="{{ kind }}">{% endif %}
+    {% if sort != 'date' or dir != 'desc' %}
+      <input type="hidden" name="sort" value="{{ sort }}">
+      <input type="hidden" name="dir" value="{{ dir }}">
+    {% endif %}
     <button type="submit">Apply</button>
   </form>
+</div>
+
+{% if profiles|length > 1 %}
+<div class="card profile-bar" style="margin-bottom: 1.5rem;">
+  <span class="label">Profile</span>
+  {% set base_parts = ['from=' ~ range_from, 'to=' ~ range_to] %}
+  {% if category %}{% set _ = base_parts.append('category=' ~ category) %}{% endif %}
+  {% if q %}{% set _ = base_parts.append('q=' ~ q) %}{% endif %}
+  {% if kind %}{% set _ = base_parts.append('kind=' ~ kind) %}{% endif %}
+  {% if sort != 'date' or dir != 'desc' %}
+    {% set _ = base_parts.append('sort=' ~ sort) %}{% set _ = base_parts.append('dir=' ~ dir) %}
+  {% endif %}
+  {% set base = '/transactions?' ~ base_parts|join('&') %}
+  <a class="profile-chip {% if not profile_id %}active{% endif %}"
+     href="{{ base }}"
+     style="{% if not profile_id %}background: var(--accent); border-color: var(--accent);{% endif %}">
+    Both
+  </a>
+  {% for p in profiles %}
+    <a class="profile-chip {% if profile_id == p.id %}active{% endif %}"
+       href="{{ base }}&profile={{ p.id }}"
+       style="{% if profile_id == p.id %}background: {{ p.color or '#60a5fa' }}; border-color: {{ p.color or '#60a5fa' }};{% else %}color: {{ p.color or '#94a3b8' }};{% endif %}">
+      <span class="dot"></span>{{ p.name }}
+    </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# Kind (Income / Spent) filter. Same pill-row pattern as the profile bar;
+   "All" is default and stays selected for the combined view. #}
+{% set kind_base_parts = ['from=' ~ range_from, 'to=' ~ range_to] %}
+{% if category %}{% set _ = kind_base_parts.append('category=' ~ category) %}{% endif %}
+{% if q %}{% set _ = kind_base_parts.append('q=' ~ q) %}{% endif %}
+{% if profile_id %}{% set _ = kind_base_parts.append('profile=' ~ profile_id) %}{% endif %}
+{% if sort != 'date' or dir != 'desc' %}
+  {% set _ = kind_base_parts.append('sort=' ~ sort) %}{% set _ = kind_base_parts.append('dir=' ~ dir) %}
+{% endif %}
+{% set kind_base = '/transactions?' ~ kind_base_parts|join('&') %}
+<div class="card profile-bar" style="margin-bottom: 1.5rem;">
+  <span class="label">Show</span>
+  <a class="profile-chip {% if not kind %}active{% endif %}"
+     href="{{ kind_base }}"
+     style="{% if not kind %}background: var(--accent); border-color: var(--accent);{% endif %}">
+    All
+  </a>
+  <a class="profile-chip {% if kind == 'income' %}active{% endif %}"
+     href="{{ kind_base }}&kind=income"
+     style="{% if kind == 'income' %}background: #10b981; border-color: #10b981;{% else %}color: #4ade80;{% endif %}">
+    <span class="dot"></span>Income
+  </a>
+  <a class="profile-chip {% if kind == 'spend' %}active{% endif %}"
+     href="{{ kind_base }}&kind=spend"
+     style="{% if kind == 'spend' %}background: var(--danger); border-color: var(--danger);{% else %}color: var(--danger);{% endif %}">
+    <span class="dot"></span>Spent
+  </a>
 </div>
 
 <div class="card" style="margin-bottom: 1.5rem;">
   <form method="get" action="/transactions" class="filter-form">
     <input type="hidden" name="from" value="{{ range_from }}">
     <input type="hidden" name="to" value="{{ range_to }}">
+    {% if profile_id %}<input type="hidden" name="profile" value="{{ profile_id }}">{% endif %}
+    {% if kind %}<input type="hidden" name="kind" value="{{ kind }}">{% endif %}
+    {% if sort != 'date' or dir != 'desc' %}
+      <input type="hidden" name="sort" value="{{ sort }}">
+      <input type="hidden" name="dir" value="{{ dir }}">
+    {% endif %}
     <label>
       Category
       <select name="category">
@@ -51,7 +144,7 @@
     </label>
     <button type="submit">Filter</button>
     {% if category or q %}
-      <a href="/transactions?from={{ range_from }}&to={{ range_to }}" class="muted" style="font-size: 0.85rem;">Clear filters</a>
+      <a href="/transactions?from={{ range_from }}&to={{ range_to }}{% if profile_id %}&profile={{ profile_id }}{% endif %}{% if kind %}&kind={{ kind }}{% endif %}{% if sort != 'date' or dir != 'desc' %}&sort={{ sort }}&dir={{ dir }}{% endif %}" class="muted" style="font-size: 0.85rem;">Clear filters</a>
     {% endif %}
   </form>
 </div>
@@ -76,8 +169,10 @@
   {% if rows %}
   <table>
     <tr>
-      <th>Date</th><th>Vendor / Description</th>
-      <th>Category</th><th style="text-align:right">Amount</th>
+      {{ sort_header('date', 'Date') }}
+      {{ sort_header('vendor', 'Vendor / Description') }}
+      {{ sort_header('category', 'Category') }}
+      {{ sort_header('amount', 'Amount', align='right') }}
     </tr>
     {% for t in rows %}
       {% include "_tx_row.html" %}
@@ -90,6 +185,9 @@
       from={{ range_from }}&to={{ range_to }}
       {%- if category %}&category={{ category }}{% endif -%}
       {%- if q %}&q={{ q }}{% endif -%}
+      {%- if profile_id %}&profile={{ profile_id }}{% endif -%}
+      {%- if kind %}&kind={{ kind }}{% endif -%}
+      {%- if sort != 'date' or dir != 'desc' %}&sort={{ sort }}&dir={{ dir }}{% endif -%}
     {%- endset %}
     {% if page > 1 %}
       <a href="/transactions?{{ qs }}&page={{ page - 1 }}">← Prev</a>

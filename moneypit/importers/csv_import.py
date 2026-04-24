@@ -149,7 +149,7 @@ def parse_csv(content: bytes, source_ref: str = "upload") -> tuple[str, list[Tra
     return bank, transactions
 
 
-def import_csv_file(path: Path) -> dict:
+def import_csv_file(path: Path, profile_id: int | None = None) -> dict:
     """Parse + insert. Returns a summary dict."""
     from ..categorize import apply_rules
 
@@ -161,17 +161,18 @@ def import_csv_file(path: Path) -> dict:
     with connect() as conn:
         for tx in txs:
             apply_rules(tx, conn)
+            tx.profile_id = profile_id
             try:
                 conn.execute(
                     """INSERT INTO transactions
                        (date, amount, currency, description, vendor, category,
-                        op_type, source, source_bank, source_ref, hash)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        op_type, source, source_bank, source_ref, profile_id, hash)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         tx.date.isoformat(), tx.amount, tx.currency,
                         tx.description, tx.vendor, tx.category,
                         tx.op_type, tx.source, tx.source_bank, tx.source_ref,
-                        tx.hash_key(),
+                        tx.profile_id, tx.hash_key(),
                     ),
                 )
                 inserted += 1

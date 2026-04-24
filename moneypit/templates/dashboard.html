@@ -1,25 +1,48 @@
 {% extends "base.html" %}
 {% block content %}
 
+{# Preserve profile selection across date-preset clicks. #}
+{% set prof_qs = '&profile=' ~ profile_id if profile_id else '' %}
+
 <div class="card range-bar" style="margin-bottom: 1.5rem;">
   <div class="presets">
     {% for label, pfrom, pto in presets %}
       {% if pfrom or pto %}
-        {% set href = '/?from=' ~ pfrom ~ '&to=' ~ pto %}
+        {% set href = '/?from=' ~ pfrom ~ '&to=' ~ pto ~ prof_qs %}
         {% set active = (range_from == pfrom and range_to == pto) %}
       {% else %}
-        {% set href = '/' %}
+        {% set href = '/' ~ ('?profile=' ~ profile_id if profile_id else '') %}
         {% set active = is_default_range %}
       {% endif %}
       <a class="preset {% if active %}active{% endif %}" href="{{ href }}">{{ label }}</a>
     {% endfor %}
   </div>
   <form method="get" action="/" class="range-form">
-    <label>From <input type="date" name="from" value="{{ range_from }}"></label>
-    <label>To <input type="date" name="to" value="{{ range_to }}"></label>
+    <label>From <input type="date" name="from" value="{{ range_from }}" min="{{ range_min }}"></label>
+    <label>To <input type="date" name="to" value="{{ range_to }}" min="{{ range_min }}"></label>
+    {% if profile_id %}<input type="hidden" name="profile" value="{{ profile_id }}">{% endif %}
     <button type="submit">Apply</button>
   </form>
 </div>
+
+{% if profiles|length > 1 %}
+<div class="card profile-bar" style="margin-bottom: 1.5rem;">
+  <span class="label">Profile</span>
+  {% set base = '/?from=' ~ range_from ~ '&to=' ~ range_to %}
+  <a class="profile-chip {% if not profile_id %}active{% endif %}"
+     href="{{ base }}"
+     style="{% if not profile_id %}background: var(--accent); border-color: var(--accent);{% endif %}">
+    Both
+  </a>
+  {% for p in profiles %}
+    <a class="profile-chip {% if profile_id == p.id %}active{% endif %}"
+       href="{{ base }}&profile={{ p.id }}"
+       style="{% if profile_id == p.id %}background: {{ p.color or '#60a5fa' }}; border-color: {{ p.color or '#60a5fa' }};{% else %}color: {{ p.color or '#94a3b8' }};{% endif %}">
+      <span class="dot"></span>{{ p.name }}
+    </a>
+  {% endfor %}
+</div>
+{% endif %}
 
 <div class="stats" style="margin-bottom: 1.5rem;">
   <div class="card">

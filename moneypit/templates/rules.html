@@ -13,18 +13,7 @@
       <th style="text-align:right">Priority</th><th></th>
     </tr>
     {% for r in rules %}
-    <tr>
-      <td><code>{{ r.pattern }}</code></td>
-      <td><span class="pill">{{ r.category }}</span></td>
-      <td>{{ r.vendor or "" }}</td>
-      <td style="text-align:right">{{ r.priority }}</td>
-      <td style="text-align:right">
-        <form method="post" action="/rules/{{ r.id }}/delete" style="display:inline"
-              onsubmit="return confirm('Delete this rule? Transactions already categorized by it will keep their category.');">
-          <button class="fix-btn" type="submit">Delete</button>
-        </form>
-      </td>
-    </tr>
+      {% include "_rule_row.html" %}
     {% endfor %}
   </table>
   {% else %}

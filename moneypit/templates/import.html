@@ -26,8 +26,21 @@
     </p>
     <form action="/import/csv" method="post" enctype="multipart/form-data" class="import-form">
       <input type="file" name="file" accept=".csv" required>
+      {% if profiles|length > 1 %}
+        <select name="profile_id" title="Whose account is this CSV from?">
+          {% for p in profiles %}
+            <option value="{{ p.id }}">{{ p.name }}</option>
+          {% endfor %}
+        </select>
+      {% endif %}
       <button type="submit">Upload</button>
     </form>
+    {% if profiles|length <= 1 %}
+    <p class="muted" style="font-size: 0.8rem; margin-top: 0.6rem;">
+      Tip: add a second <a href="/profiles" style="color: var(--accent);">profile</a>
+      to tag whose records you're importing (yours vs. your partner's).
+    </p>
+    {% endif %}
   </div>
 
   <div class="card">
@@ -65,13 +78,29 @@
       </label>
       <label class="wide">
         Category
-        <select name="category">
+        <select name="category"
+                onchange="const nxt = this.parentElement.nextElementSibling; nxt.style.display = this.value === '__new__' ? 'flex' : 'none'; if (this.value === '__new__') nxt.querySelector('input').focus();">
           <option value="">Auto-detect from rules</option>
           {% for c in categories %}
             <option value="{{ c }}">{{ c }}</option>
           {% endfor %}
+          <option value="__new__">+ New category…</option>
         </select>
       </label>
+      <label class="wide" style="display: none;">
+        New category name
+        <input type="text" name="category_new" placeholder="e.g. Pets">
+      </label>
+      {% if profiles|length > 1 %}
+      <label class="wide">
+        Profile
+        <select name="profile_id">
+          {% for p in profiles %}
+            <option value="{{ p.id }}">{{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endif %}
       <button type="submit" class="wide">Add transaction</button>
     </form>
   </div>

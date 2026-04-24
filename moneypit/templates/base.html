@@ -4,8 +4,24 @@
   <meta charset="utf-8">
   <title>Moneypit</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  {# Apply theme pre-paint so we don't flash dark before switching to light. #}
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('moneypit-theme');
+        if (t === 'light' || t === 'dark') {
+          document.documentElement.setAttribute('data-theme', t);
+        }
+      } catch (e) { /* localStorage unavailable — stick with default dark */ }
+    })();
+  </script>
   <script src="https://unpkg.com/htmx.org@2.0.3" integrity="sha384-0895/pl2MU10Hqc6jd4RvrthNlDiE9U1tWmX7WRESftEDRosgxNsQG/Ze9YMRzHq" crossorigin="anonymous"></script>
   <style>
+    /* Default (dark) theme. The non-obvious tokens:
+       --input-bg: form inputs use a different shade from cards so they stand
+         out on a card background.
+       --btn-fg: foreground color on accent-colored buttons — stays dark in
+         both themes because the accent blue is light enough for dark text. */
     :root {
       --bg: #0f172a;
       --card: #1e293b;
@@ -13,6 +29,26 @@
       --muted: #94a3b8;
       --accent: #60a5fa;
       --danger: #f87171;
+      --success: #4ade80;
+      --border: #334155;
+      --border-strong: #475569;
+      --input-bg: #0f172a;
+      --btn-fg: #0f172a;
+      --pill-bg: #334155;
+    }
+    :root[data-theme="light"] {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --danger: #dc2626;
+      --success: #16a34a;
+      --border: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --input-bg: #ffffff;
+      --btn-fg: #ffffff;
+      --pill-bg: #e2e8f0;
     }
     * { box-sizing: border-box; }
     body {
@@ -23,7 +59,7 @@
     }
     header {
       padding: 1.5rem 2rem;
-      border-bottom: 1px solid #334155;
+      border-bottom: 1px solid var(--border);
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -43,27 +79,27 @@
     }
     .card h2 { margin: 0 0 1rem; font-size: 1.05rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
     table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-    th, td { text-align: left; padding: 0.4rem 0; border-bottom: 1px solid #334155; }
+    th, td { text-align: left; padding: 0.4rem 0; border-bottom: 1px solid var(--border); }
     th { color: var(--muted); font-weight: 500; }
     .amt-neg { color: var(--danger); }
-    .amt-pos { color: #4ade80; }
+    .amt-pos { color: var(--success); }
     .pill {
       display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px;
-      font-size: 0.75rem; background: #334155; color: var(--text);
+      font-size: 0.75rem; background: var(--border); color: var(--text);
     }
     form.upload {
       display: flex; gap: 0.5rem; align-items: center;
     }
     form.upload input[type=file] { color: var(--muted); }
     form.upload button {
-      background: var(--accent); color: #0f172a; border: 0; padding: 0.5rem 1rem;
+      background: var(--accent); color: var(--btn-fg); border: 0; padding: 0.5rem 1rem;
       border-radius: 6px; font-weight: 600; cursor: pointer;
     }
     .big-number { font-size: 2rem; font-weight: 600; }
 
     /* Inline categorize form */
     .fix-btn {
-      background: none; border: 1px solid #475569; color: var(--muted);
+      background: none; border: 1px solid var(--border-strong); color: var(--muted);
       padding: 0.15rem 0.55rem; border-radius: 4px; cursor: pointer; font-size: 0.75rem;
     }
     .fix-btn:hover { color: var(--text); border-color: var(--accent); }
@@ -71,12 +107,12 @@
       display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap;
     }
     .fix-form select, .fix-form input {
-      background: #0f172a; color: var(--text); border: 1px solid #475569;
+      background: var(--input-bg); color: var(--text); border: 1px solid var(--border-strong);
       padding: 0.25rem 0.4rem; border-radius: 4px; font-size: 0.85rem;
     }
     .fix-form input { width: 140px; }
     .fix-form button {
-      background: var(--accent); color: #0f172a; border: 0;
+      background: var(--accent); color: var(--btn-fg); border: 0;
       padding: 0.3rem 0.7rem; border-radius: 4px; cursor: pointer; font-weight: 600;
       font-size: 0.8rem;
     }
@@ -85,7 +121,7 @@
       display: flex; align-items: center; gap: 0.2rem;
     }
     .flash {
-      font-size: 0.75rem; color: #4ade80; margin-left: 0.5rem;
+      font-size: 0.75rem; color: var(--success); margin-left: 0.5rem;
     }
     nav a {
       color: var(--muted); text-decoration: none; margin-right: 1rem;
@@ -101,25 +137,25 @@
     .presets { display: flex; flex-wrap: wrap; gap: 0.4rem; }
     .preset {
       padding: 0.3rem 0.7rem; border-radius: 999px; font-size: 0.8rem;
-      text-decoration: none; color: var(--muted); border: 1px solid #334155;
+      text-decoration: none; color: var(--muted); border: 1px solid var(--border);
     }
-    .preset:hover { color: var(--text); border-color: #475569; }
+    .preset:hover { color: var(--text); border-color: var(--border-strong); }
     .preset.active {
-      background: var(--accent); color: #0f172a; border-color: var(--accent);
+      background: var(--accent); color: var(--btn-fg); border-color: var(--accent);
       font-weight: 600;
     }
     .range-form { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
     .range-form label { font-size: 0.8rem; color: var(--muted); display: flex; gap: 0.3rem; align-items: center; }
     .range-form input[type=date] {
-      background: #0f172a; color: var(--text); border: 1px solid #475569;
+      background: var(--input-bg); color: var(--text); border: 1px solid var(--border-strong);
       padding: 0.3rem 0.5rem; border-radius: 4px; font-size: 0.85rem;
       color-scheme: dark;
     }
     .range-form button {
-      background: #334155; color: var(--text); border: 0;
+      background: var(--border); color: var(--text); border: 0;
       padding: 0.35rem 0.8rem; border-radius: 4px; cursor: pointer; font-size: 0.85rem;
     }
-    .range-form button:hover { background: #475569; }
+    .range-form button:hover { background: var(--border-strong); }
 
     /* Category + search filter form on /transactions */
     .filter-form { display: flex; gap: 0.8rem; align-items: flex-end; flex-wrap: wrap; }
@@ -128,15 +164,38 @@
       display: flex; flex-direction: column; gap: 0.25rem;
     }
     .filter-form select, .filter-form input[type=search] {
-      background: #0f172a; color: var(--text); border: 1px solid #475569;
+      background: var(--input-bg); color: var(--text); border: 1px solid var(--border-strong);
       padding: 0.35rem 0.55rem; border-radius: 4px; font-size: 0.9rem;
       min-width: 180px;
     }
     .filter-form button {
-      background: var(--accent); color: #0f172a; border: 0;
+      background: var(--accent); color: var(--btn-fg); border: 0;
       padding: 0.4rem 0.9rem; border-radius: 4px; cursor: pointer; font-weight: 600;
       font-size: 0.85rem; align-self: flex-end;
     }
+
+    /* Theme toggle button (header, top-right) */
+    .theme-toggle {
+      background: transparent; color: var(--muted); border: 1px solid var(--border);
+      border-radius: 999px; padding: 0.4rem 0.6rem; cursor: pointer;
+      font-size: 1rem; line-height: 1;
+    }
+    .theme-toggle:hover { color: var(--text); border-color: var(--border-strong); }
+    /* Show one glyph or the other depending on the current theme — the one
+       we show is what you'll *switch to*, which is also how every other app
+       does it. */
+    .theme-toggle .theme-dark { display: none; }
+    .theme-toggle .theme-light { display: inline; }
+    :root[data-theme="light"] .theme-toggle .theme-dark { display: inline; }
+    :root[data-theme="light"] .theme-toggle .theme-light { display: none; }
+
+    /* Sortable column headers */
+    .sort-link {
+      color: var(--muted); text-decoration: none; font-weight: 500;
+      display: inline-block;
+    }
+    .sort-link:hover { color: var(--text); }
+    .sort-link.active { color: var(--accent); }
 
     /* Pagination */
     .pagination {
@@ -145,15 +204,77 @@
     }
     .pagination a { color: var(--accent); text-decoration: none; }
     .pagination a:hover { text-decoration: underline; }
-    .pagination .disabled { color: #475569; }
+    .pagination .disabled { color: var(--border-strong); }
+
+    /* Profile filter bar */
+    .profile-bar {
+      display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+    }
+    .profile-bar .label {
+      font-size: 0.75rem; color: var(--muted); text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .profile-chip {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      padding: 0.3rem 0.75rem; border-radius: 999px; font-size: 0.8rem;
+      text-decoration: none; color: var(--muted);
+      border: 1px solid var(--border); background: transparent;
+    }
+    .profile-chip:hover { color: var(--text); border-color: var(--border-strong); }
+    .profile-chip.active {
+      color: var(--btn-fg); font-weight: 600;
+    }
+    .profile-chip .dot {
+      width: 8px; height: 8px; border-radius: 50%; background: currentColor;
+      opacity: 0.8;
+    }
+
+    /* Profiles page */
+    .profile-row {
+      display: flex; align-items: center; gap: 0.8rem;
+      padding: 0.5rem 0; border-bottom: 1px solid var(--border);
+    }
+    .profile-row:last-child { border-bottom: none; }
+    .profile-row .swatch {
+      width: 14px; height: 14px; border-radius: 50%;
+    }
+    .profile-row .name { flex: 1; }
+    .profile-row .count { color: var(--muted); font-size: 0.85rem; }
+    .profile-row button.danger {
+      background: transparent; color: var(--danger); border: 1px solid var(--border-strong);
+      padding: 0.25rem 0.6rem; border-radius: 4px; cursor: pointer; font-size: 0.8rem;
+    }
+    .profile-row button.danger:hover { border-color: var(--danger); }
+    .profile-form {
+      display: flex; gap: 0.6rem; align-items: flex-end; flex-wrap: wrap;
+      margin-top: 1rem;
+    }
+    .profile-form label {
+      display: flex; flex-direction: column; gap: 0.25rem;
+      font-size: 0.75rem; color: var(--muted);
+    }
+    .profile-form input[type=text] {
+      background: var(--input-bg); color: var(--text); border: 1px solid var(--border-strong);
+      padding: 0.35rem 0.55rem; border-radius: 4px; font-size: 0.9rem;
+      min-width: 180px;
+    }
+    .profile-form input[type=color] {
+      background: transparent; border: 1px solid var(--border-strong); border-radius: 4px;
+      padding: 0.15rem; width: 44px; height: 32px; cursor: pointer;
+    }
+    .profile-form button {
+      background: var(--accent); color: var(--btn-fg); border: 0;
+      padding: 0.4rem 0.9rem; border-radius: 4px; cursor: pointer; font-weight: 600;
+      font-size: 0.85rem;
+    }
 
     /* Import page */
-    .flash-card { border-left: 3px solid #4ade80; }
+    .flash-card { border-left: 3px solid var(--success); }
     .flash-error { border-left: 3px solid var(--danger); color: var(--danger); }
     .import-form { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 1rem; }
     .import-form input[type=file] { color: var(--muted); flex: 1; min-width: 200px; }
     .import-form button {
-      background: var(--accent); color: #0f172a; border: 0;
+      background: var(--accent); color: var(--btn-fg); border: 0;
       padding: 0.5rem 1rem; border-radius: 6px; font-weight: 600; cursor: pointer;
     }
     .manual-form {
@@ -165,12 +286,12 @@
     }
     .manual-form label.wide { grid-column: 1 / -1; }
     .manual-form input, .manual-form select {
-      background: #0f172a; color: var(--text); border: 1px solid #475569;
+      background: var(--input-bg); color: var(--text); border: 1px solid var(--border-strong);
       padding: 0.4rem 0.55rem; border-radius: 4px; font-size: 0.9rem;
     }
     .manual-form input[type=date] { color-scheme: dark; }
     .manual-form button {
-      background: var(--accent); color: #0f172a; border: 0;
+      background: var(--accent); color: var(--btn-fg); border: 0;
       padding: 0.55rem 1rem; border-radius: 6px; font-weight: 600; cursor: pointer;
       font-size: 0.9rem; justify-self: start;
     }
@@ -185,8 +306,20 @@
         <a href="/transactions">Transactions</a>
         <a href="/import">Import</a>
         <a href="/rules">Rules</a>
+        <a href="/profiles">Profiles</a>
       </nav>
     </div>
+    <button type="button" class="theme-toggle"
+            title="Toggle light / dark mode"
+            onclick="(function(){
+              var root = document.documentElement;
+              var next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+              root.setAttribute('data-theme', next);
+              try { localStorage.setItem('moneypit-theme', next); } catch(e){}
+            })()">
+      <span class="theme-light">🌙</span>
+      <span class="theme-dark">☀️</span>
+    </button>
   </header>
   <main>
     {% block content %}{% endblock %}

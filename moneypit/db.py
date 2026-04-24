@@ -6,6 +6,12 @@ from pathlib import Path
 DB_PATH = Path(os.environ.get("MONEYPIT_DB", "moneypit.db"))
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS profiles (
+    id    INTEGER PRIMARY KEY AUTOINCREMENT,
+    name  TEXT NOT NULL UNIQUE,
+    color TEXT
+);
+
 CREATE TABLE IF NOT EXISTS transactions (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     date          TEXT NOT NULL,           -- ISO YYYY-MM-DD
@@ -18,6 +24,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     source        TEXT NOT NULL,           -- 'csv' | 'gmail' | 'receipt'
     source_bank   TEXT,                    -- 'pekao' | 'ing' | 'mbank' | NULL
     source_ref    TEXT,                    -- filename or similar
+    profile_id    INTEGER REFERENCES profiles(id) ON DELETE SET NULL,
     hash          TEXT NOT NULL UNIQUE,    -- dedup key
     imported_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -25,6 +32,7 @@ CREATE TABLE IF NOT EXISTS transactions (
 CREATE INDEX IF NOT EXISTS idx_tx_date      ON transactions(date);
 CREATE INDEX IF NOT EXISTS idx_tx_category  ON transactions(category);
 CREATE INDEX IF NOT EXISTS idx_tx_vendor    ON transactions(vendor);
+CREATE INDEX IF NOT EXISTS idx_tx_profile   ON transactions(profile_id);
 
 CREATE TABLE IF NOT EXISTS rules (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,6 +47,9 @@ CREATE TABLE IF NOT EXISTS categories (
     color TEXT
 );
 """
+
+DEFAULT_PROFILE_NAME = "Me"
+DEFAULT_PROFILE_COLOR = "#60a5fa"
 
 DEFAULT_CATEGORIES = [
     ("Groceries",       "#4ade80"),
@@ -221,9 +232,20 @@ def connect():
         conn.close()
 
 
+def _ensure_profile_column(conn: sqlite3.Connection) -> None:
+    """Add `profile_id` to `transactions` on pre-existing DBs. `CREATE TABLE
+    IF NOT EXISTS` doesn't alter an existing table, so we check and patch."""
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(transactions)")}
+    if "profile_id" not in cols:
+        conn.execute("ALTER TABLE transactions ADD COLUMN profile_id INTEGER REFERENCES profiles(id) ON DELETE SET NULL")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tx_profile ON transactions(profile_id)")
+
+
 def init_db() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
+        _ensure_profile_column(conn)
+
         existing = {row["name"] for row in conn.execute("SELECT name FROM categories")}
         for name, color in DEFAULT_CATEGORIES:
             if name not in existing:
@@ -235,3 +257,21 @@ def init_db() -> None:
                 "INSERT INTO rules (pattern, category, vendor) VALUES (?, ?, ?)",
                 DEFAULT_RULES,
             )
+
+        # Seed the default profile and stamp any orphan transactions onto it,
+        # so existing DBs upgrade cleanly without leaving rows unassigned.
+        default_id_row = conn.execute(
+            "SELECT id FROM profiles WHERE name = ?", (DEFAULT_PROFILE_NAME,)
+        ).fetchone()
+        if default_id_row is None:
+            cur = conn.execute(
+                "INSERT INTO profiles (name, color) VALUES (?, ?)",
+                (DEFAULT_PROFILE_NAME, DEFAULT_PROFILE_COLOR),
+            )
+            default_id = cur.lastrowid
+        else:
+            default_id = default_id_row["id"]
+        conn.execute(
+            "UPDATE transactions SET profile_id = ? WHERE profile_id IS NULL",
+            (default_id,),
+        )
