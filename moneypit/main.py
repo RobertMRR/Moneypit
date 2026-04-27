@@ -1,15 +1,20 @@
 from datetime import date, timedelta
 from pathlib import Path
 
-from fastapi import FastAPI, Form, Query, Request, UploadFile, File, HTTPException
+from fastapi import Depends, FastAPI, Form, Query, Request, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from .db import connect, init_db
-from .importers import parse_csv
+from .importers import parse_csv, scan_receipt
 from .categorize import apply_rules
 from .recurring import detect_recurring
 from .rules import suggest_pattern, create_rule_and_recategorize
+from .auth import (
+    get_current_user, verify_password, hash_password, create_session,
+    delete_session, register_user, create_default_profile,
+    cleanup_expired_sessions, COOKIE_NAME,
+)
 
 BASE_DIR = Path(__file__).parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -20,6 +25,80 @@ app = FastAPI(title="Moneypit", version="0.1.0")
 @app.on_event("startup")
 def _startup() -> None:
     init_db()
+    with connect() as conn:
+        cleanup_expired_sessions(conn)
+
+
+@app.exception_handler(401)
+async def _auth_redirect(request: Request, exc):
+    if request.headers.get("HX-Request"):
+        response = HTMLResponse(status_code=200)
+        response.headers["HX-Redirect"] = "/login"
+        return response
+    return RedirectResponse(url="/login", status_code=303)
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request, error: str | None = None):
+    return templates.TemplateResponse(request, "login.html", {"error": error})
+
+
+@app.post("/login")
+def login(email: str = Form(...), password: str = Form(...)):
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT id, password_hash FROM users WHERE email = ?", (email,)
+        ).fetchone()
+        if row is None or not verify_password(password, row["password_hash"]):
+            return RedirectResponse(
+                url="/login?error=Invalid+email+or+password", status_code=303,
+            )
+        token = create_session(conn, row["id"])
+    resp = RedirectResponse(url="/", status_code=303)
+    resp.set_cookie(COOKIE_NAME, token, httponly=True, samesite="lax", max_age=30 * 86400)
+    return resp
+
+
+@app.get("/register", response_class=HTMLResponse)
+def register_page(request: Request, error: str | None = None):
+    return templates.TemplateResponse(request, "register.html", {"error": error})
+
+
+@app.post("/register")
+def register(email: str = Form(...), password: str = Form(...), confirm: str = Form(...)):
+    if password != confirm:
+        return RedirectResponse(url="/register?error=Passwords+do+not+match", status_code=303)
+    if len(password) < 8:
+        return RedirectResponse(
+            url="/register?error=Password+must+be+at+least+8+characters", status_code=303,
+        )
+    with connect() as conn:
+        existing = conn.execute("SELECT 1 FROM users WHERE email = ?", (email,)).fetchone()
+        if existing:
+            return RedirectResponse(
+                url="/register?error=Email+already+registered", status_code=303,
+            )
+        user_id = register_user(conn, email, password)
+        has_profiles = conn.execute(
+            "SELECT 1 FROM profiles WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        if not has_profiles:
+            create_default_profile(conn, user_id)
+        token = create_session(conn, user_id)
+    resp = RedirectResponse(url="/", status_code=303)
+    resp.set_cookie(COOKIE_NAME, token, httponly=True, samesite="lax", max_age=30 * 86400)
+    return resp
+
+
+@app.post("/logout")
+def logout(request: Request):
+    token = request.cookies.get(COOKIE_NAME)
+    if token:
+        with connect() as conn:
+            delete_session(conn, token)
+    resp = RedirectResponse(url="/login", status_code=303)
+    resp.delete_cookie(COOKIE_NAME)
+    return resp
 
 
 def _load_categories() -> list[str]:
@@ -67,18 +146,19 @@ def _resolve_category(conn, category: str, category_new: str) -> str:
     return category
 
 
-def _load_profiles() -> list[dict]:
+def _load_profiles(user_id: int) -> list[dict]:
     with connect() as conn:
         return [dict(r) for r in conn.execute(
-            "SELECT id, name, color FROM profiles ORDER BY id"
+            "SELECT id, name, color FROM profiles WHERE user_id = ? ORDER BY id",
+            (user_id,),
         )]
 
 
-def _resolve_profile(profile: str | None) -> tuple[int | None, str]:
+def _resolve_profile(profile: str | None, user_id: int) -> tuple[int | None, str]:
     """
     Parse ?profile= query param. Returns (profile_id, label).
     "" or missing → (None, "All profiles") — the combined-budget view.
-    Numeric string → (int, profile name) if it exists, else the default.
+    Numeric string → (int, profile name) if it exists and belongs to user.
     """
     if not profile:
         return None, "All profiles"
@@ -87,7 +167,9 @@ def _resolve_profile(profile: str | None) -> tuple[int | None, str]:
     except ValueError:
         return None, "All profiles"
     with connect() as conn:
-        row = conn.execute("SELECT name FROM profiles WHERE id = ?", (pid,)).fetchone()
+        row = conn.execute(
+            "SELECT name FROM profiles WHERE id = ? AND user_id = ?", (pid, user_id)
+        ).fetchone()
     if row is None:
         return None, "All profiles"
     return pid, row["name"]
@@ -99,14 +181,14 @@ def _resolve_profile(profile: str | None) -> tuple[int | None, str]:
 DEFAULT_ALL_TIME_START = date(1970, 1, 1)
 
 
-def _earliest_transaction_date() -> date:
-    """Earliest `date` across all transactions, or today if the table is empty.
-
-    Used as the lower bound for "All time" ranges and the `min` on date
-    pickers, so users can't scroll back through decades of empty calendar.
-    """
+def _earliest_transaction_date(user_id: int) -> date:
+    """Earliest `date` across the user's transactions, or today if empty."""
     with connect() as conn:
-        row = conn.execute("SELECT MIN(date) AS d FROM transactions").fetchone()
+        row = conn.execute(
+            "SELECT MIN(date) AS d FROM transactions "
+            "WHERE profile_id IN (SELECT id FROM profiles WHERE user_id = ?)",
+            (user_id,),
+        ).fetchone()
     if row is None or row["d"] is None:
         return date.today()
     try:
@@ -182,16 +264,19 @@ def dashboard(
     from_: str | None = Query(None, alias="from"),
     to: str | None = Query(None, alias="to"),
     profile: str | None = Query(None),
+    user: dict = Depends(get_current_user),
 ):
-    earliest = _earliest_transaction_date()
+    earliest = _earliest_transaction_date(user["id"])
     start, end, range_label = _resolve_range(from_, to, earliest=earliest)
     start_s, end_s = start.isoformat(), end.isoformat()
-    profile_id, profile_label = _resolve_profile(profile)
+    profile_id, profile_label = _resolve_profile(profile, user["id"])
 
-    # Base WHERE for date-filtered queries. Profile is optional — when None,
-    # show the combined household view (default). When set, pin to one profile.
-    prof_clause = " AND profile_id = ?" if profile_id is not None else ""
-    prof_params: list = [profile_id] if profile_id is not None else []
+    if profile_id is not None:
+        prof_clause = " AND profile_id = ?"
+        prof_params: list = [profile_id]
+    else:
+        prof_clause = " AND profile_id IN (SELECT id FROM profiles WHERE user_id = ?)"
+        prof_params = [user["id"]]
 
     with connect() as conn:
         by_category = conn.execute(
@@ -249,15 +334,16 @@ def dashboard(
         total_income = totals["income"]
         net = total_income - total_spend
 
-    recurring = detect_recurring(profile_id=profile_id)  # all-time, intentionally
+    recurring = detect_recurring(profile_id=profile_id, user_id=user["id"])
     categories = _load_categories()
-    profiles = _load_profiles()
+    profiles = _load_profiles(user["id"])
     presets = _build_presets(date.today(), earliest=earliest)
 
     return templates.TemplateResponse(
         request,
         "dashboard.html",
         {
+            "user": user,
             "range_label": range_label,
             "range_from": start_s,
             "range_to": end_s,
@@ -289,13 +375,15 @@ def import_page(
     bank: str | None = None,
     added: int | None = None,
     error: str | None = None,
+    user: dict = Depends(get_current_user),
 ):
     categories = _load_categories()
-    profiles = _load_profiles()
+    profiles = _load_profiles(user["id"])
     return templates.TemplateResponse(
         request,
         "import.html",
         {
+            "user": user,
             "categories": categories,
             "profiles": profiles,
             "imported": imported,
@@ -312,6 +400,7 @@ def import_page(
 async def import_csv(
     file: UploadFile = File(...),
     profile_id: str = Form(""),
+    user: dict = Depends(get_current_user),
 ):
     content = await file.read()
     try:
@@ -319,10 +408,7 @@ async def import_csv(
     except ValueError as e:
         return RedirectResponse(url=f"/import?error={e}", status_code=303)
 
-    # Blank profile falls back to the default "Me" profile — we never want
-    # un-tagged transactions now that the filter UI assumes everything has
-    # a profile. Unknown IDs also fall back rather than silently drop.
-    pid = _coerce_profile_id(profile_id)
+    pid = _coerce_profile_id(profile_id, user["id"])
 
     inserted = skipped = 0
     with connect() as conn:
@@ -355,10 +441,39 @@ async def import_csv(
     )
 
 
-def _coerce_profile_id(raw: str) -> int:
-    """Resolve a form-submitted profile id to an existing profile. Falls back
-    to the default 'Me' profile when empty or unknown — we always want a
-    concrete profile stamped on new transactions."""
+@app.post("/import/receipt")
+async def import_receipt(
+    request: Request,
+    file: UploadFile = File(...),
+    profile_id: str = Form(""),
+    user: dict = Depends(get_current_user),
+):
+    content = await file.read()
+    content_type = file.content_type or "application/octet-stream"
+    try:
+        data = scan_receipt(content, content_type)
+    except Exception as e:
+        return RedirectResponse(url=f"/import?error={e}", status_code=303)
+
+    categories = _load_categories()
+    profiles = _load_profiles(user["id"])
+    return templates.TemplateResponse(
+        request,
+        "receipt_confirm.html",
+        {
+            "user": user,
+            "data": data,
+            "profile_id": profile_id,
+            "profiles": profiles,
+            "categories": categories,
+            "today": date.today().isoformat(),
+        },
+    )
+
+
+def _coerce_profile_id(raw: str, user_id: int) -> int:
+    """Resolve a form-submitted profile id to one owned by the user. Falls back
+    to the user's default profile when empty or unknown."""
     from .db import DEFAULT_PROFILE_NAME
     with connect() as conn:
         if raw:
@@ -367,12 +482,21 @@ def _coerce_profile_id(raw: str) -> int:
             except ValueError:
                 pid = None
             if pid is not None:
-                row = conn.execute("SELECT id FROM profiles WHERE id = ?", (pid,)).fetchone()
+                row = conn.execute(
+                    "SELECT id FROM profiles WHERE id = ? AND user_id = ?",
+                    (pid, user_id),
+                ).fetchone()
                 if row is not None:
                     return row["id"]
         row = conn.execute(
-            "SELECT id FROM profiles WHERE name = ?", (DEFAULT_PROFILE_NAME,)
+            "SELECT id FROM profiles WHERE name = ? AND user_id = ?",
+            (DEFAULT_PROFILE_NAME, user_id),
         ).fetchone()
+        if row is None:
+            row = conn.execute(
+                "SELECT id FROM profiles WHERE user_id = ? ORDER BY id LIMIT 1",
+                (user_id,),
+            ).fetchone()
         return row["id"]
 
 
@@ -387,6 +511,7 @@ def add_transaction(
     category: str = Form(""),
     category_new: str = Form(""),
     profile_id: str = Form(""),
+    user: dict = Depends(get_current_user),
 ):
     """Create a transaction manually (cash purchase, receipt, reconciliation)."""
     import secrets
@@ -397,15 +522,13 @@ def add_transaction(
     except ValueError:
         return RedirectResponse(url="/import?error=Invalid+date", status_code=303)
 
-    # Amount comes in as positive from the form; sign is set by the direction
-    # toggle. Reject 0 since it's almost certainly user error.
     amount = abs(amount)
     if amount == 0:
         return RedirectResponse(url="/import?error=Amount+cannot+be+zero", status_code=303)
     signed = amount if direction == "income" else -amount
 
     desc = description.strip() or vendor.strip() or "(manual entry)"
-    pid = _coerce_profile_id(profile_id)
+    pid = _coerce_profile_id(profile_id, user["id"])
 
     with connect() as conn:
         resolved_category = _resolve_category(conn, category.strip(), category_new)
@@ -452,20 +575,14 @@ def categorize_transaction(
     pattern: str = Form(""),
     vendor: str = Form(""),
     create_rule: str = Form(""),
+    user: dict = Depends(get_current_user),
 ):
-    """
-    Inline categorize one transaction. If `create_rule` is set, also persist
-    a rule from the given pattern so future charges auto-categorize, and
-    retroactively apply it to existing transactions.
-
-    Returns the updated row HTML (or a "vanished" placeholder if the row no
-    longer belongs in the list it was rendered into — e.g. moved off the
-    "Uncategorized" list).
-    """
     with connect() as conn:
         row = conn.execute(
-            "SELECT id, description, vendor FROM transactions WHERE id = ?",
-            (tx_id,),
+            """SELECT t.id, t.description, t.vendor FROM transactions t
+               JOIN profiles p ON p.id = t.profile_id
+               WHERE t.id = ? AND p.user_id = ?""",
+            (tx_id, user["id"]),
         ).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="transaction not found")
@@ -479,7 +596,8 @@ def categorize_transaction(
         updated_count = 1
         if create_rule and pattern.strip():
             summary = create_rule_and_recategorize(
-                conn, pattern.strip(), resolved_category, vendor.strip() or None
+                conn, pattern.strip(), resolved_category, vendor.strip() or None,
+                user_id=user["id"],
             )
             updated_count = summary["updated"]
         else:
@@ -533,15 +651,12 @@ def transactions_page(
     sort: str = Query("date"),
     dir: str = Query("desc"),
     page: int = Query(1, ge=1),
+    user: dict = Depends(get_current_user),
 ):
-    """
-    Browse all transactions with filters. Default range is all-time (unlike
-    the dashboard) because people come here to look up old transactions.
-    """
-    earliest = _earliest_transaction_date()
+    earliest = _earliest_transaction_date(user["id"])
     start, end, range_label = _resolve_range(from_, to, default="all", earliest=earliest)
     start_s, end_s = start.isoformat(), end.isoformat()
-    profile_id, profile_label = _resolve_profile(profile)
+    profile_id, profile_label = _resolve_profile(profile, user["id"])
 
     # Resolve sort — fall back to the default rather than 400ing on junk input.
     if sort not in _SORT_COLUMNS:
@@ -563,8 +678,9 @@ def transactions_page(
     if profile_id is not None:
         where.append("profile_id = ?")
         params.append(profile_id)
-    # Kind filter: Income (amount > 0) / Spent (amount < 0). Junk values fall
-    # through to "All" rather than 400ing, matching how sort/dir behave.
+    else:
+        where.append("profile_id IN (SELECT id FROM profiles WHERE user_id = ?)")
+        params.append(user["id"])
     if kind == "spend":
         where.append("amount < 0")
     elif kind == "income":
@@ -600,13 +716,14 @@ def transactions_page(
 
     total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     categories = _load_categories()
-    profiles = _load_profiles()
+    profiles = _load_profiles(user["id"])
     presets = _build_presets(date.today(), earliest=earliest)
 
     return templates.TemplateResponse(
         request,
         "transactions.html",
         {
+            "user": user,
             "range_label": range_label,
             "range_from": start_s,
             "range_to": end_s,
@@ -633,7 +750,7 @@ def transactions_page(
 
 
 @app.get("/rules", response_class=HTMLResponse)
-def rules_page(request: Request):
+def rules_page(request: Request, user: dict = Depends(get_current_user)):
     with connect() as conn:
         rows = conn.execute(
             "SELECT id, pattern, category, vendor, priority FROM rules ORDER BY category, pattern"
@@ -642,13 +759,12 @@ def rules_page(request: Request):
     return templates.TemplateResponse(
         request,
         "rules.html",
-        {"rules": [dict(r) for r in rows], "categories": categories},
+        {"user": user, "rules": [dict(r) for r in rows], "categories": categories},
     )
 
 
 @app.get("/rules/{rule_id}/edit", response_class=HTMLResponse)
-def rule_edit_row(request: Request, rule_id: int):
-    """Return the edit-mode row HTML for htmx to swap in."""
+def rule_edit_row(request: Request, rule_id: int, user: dict = Depends(get_current_user)):
     with connect() as conn:
         row = conn.execute(
             "SELECT id, pattern, category, vendor, priority FROM rules WHERE id = ?",
@@ -665,8 +781,7 @@ def rule_edit_row(request: Request, rule_id: int):
 
 
 @app.get("/rules/{rule_id}/row", response_class=HTMLResponse)
-def rule_view_row(request: Request, rule_id: int):
-    """Return the display-mode row HTML — used by the Cancel button in edit."""
+def rule_view_row(request: Request, rule_id: int, user: dict = Depends(get_current_user)):
     with connect() as conn:
         row = conn.execute(
             "SELECT id, pattern, category, vendor, priority FROM rules WHERE id = ?",
@@ -688,6 +803,7 @@ def update_rule(
     category_new: str = Form(""),
     vendor: str = Form(""),
     priority: int = Form(100),
+    user: dict = Depends(get_current_user),
 ):
     from .rules import update_rule_and_recategorize
     with connect() as conn:
@@ -701,6 +817,7 @@ def update_rule(
             category=resolved_category,
             vendor=vendor.strip() or None,
             priority=priority,
+            user_id=user["id"],
         )
         row = conn.execute(
             "SELECT id, pattern, category, vendor, priority FROM rules WHERE id = ?",
@@ -719,69 +836,212 @@ def update_rule(
 
 
 @app.post("/rules/{rule_id}/delete")
-def delete_rule(rule_id: int):
+def delete_rule(rule_id: int, user: dict = Depends(get_current_user)):
     with connect() as conn:
         conn.execute("DELETE FROM rules WHERE id = ?", (rule_id,))
     return RedirectResponse(url="/rules", status_code=303)
 
 
-@app.get("/profiles", response_class=HTMLResponse)
-def profiles_page(request: Request, error: str | None = None):
+@app.get("/profiles")
+def profiles_redirect():
+    return RedirectResponse(url="/settings#profiles", status_code=303)
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page(
+    request: Request,
+    error: str | None = None,
+    success: str | None = None,
+    user: dict = Depends(get_current_user),
+):
     from .db import DEFAULT_PROFILE_NAME
     with connect() as conn:
-        rows = conn.execute(
+        profiles = conn.execute(
             """SELECT p.id, p.name, p.color,
                       (SELECT COUNT(*) FROM transactions t WHERE t.profile_id = p.id) AS tx_count
                FROM profiles p
-               ORDER BY p.id"""
+               WHERE p.user_id = ?
+               ORDER BY p.id""",
+            (user["id"],),
         ).fetchall()
+        user_row = conn.execute(
+            "SELECT default_currency FROM users WHERE id = ?", (user["id"],)
+        ).fetchone()
+        default_currency = user_row["default_currency"] if user_row else "PLN"
     return templates.TemplateResponse(
         request,
-        "profiles.html",
+        "settings.html",
         {
-            "profiles": [dict(r) for r in rows],
+            "user": user,
+            "profiles": [dict(r) for r in profiles],
             "default_name": DEFAULT_PROFILE_NAME,
+            "default_currency": default_currency,
             "error": error,
+            "success": success,
         },
     )
 
 
 @app.post("/profiles")
-def create_profile(name: str = Form(...), color: str = Form("#94a3b8")):
+def create_profile(
+    name: str = Form(...),
+    color: str = Form("#94a3b8"),
+    user: dict = Depends(get_current_user),
+):
     name = name.strip()
     if not name:
-        return RedirectResponse(url="/profiles?error=Name+cannot+be+empty", status_code=303)
+        return RedirectResponse(url="/settings?error=Name+cannot+be+empty#profiles", status_code=303)
     with connect() as conn:
-        existing = conn.execute("SELECT 1 FROM profiles WHERE name = ?", (name,)).fetchone()
+        existing = conn.execute(
+            "SELECT 1 FROM profiles WHERE name = ? AND user_id = ?",
+            (name, user["id"]),
+        ).fetchone()
         if existing:
-            return RedirectResponse(url="/profiles?error=Profile+already+exists", status_code=303)
-        conn.execute("INSERT INTO profiles (name, color) VALUES (?, ?)", (name, color))
-    return RedirectResponse(url="/profiles", status_code=303)
+            return RedirectResponse(url="/settings?error=Profile+already+exists#profiles", status_code=303)
+        conn.execute(
+            "INSERT INTO profiles (name, color, user_id) VALUES (?, ?, ?)",
+            (name, color, user["id"]),
+        )
+    return RedirectResponse(url="/settings#profiles", status_code=303)
 
 
 @app.post("/profiles/{profile_id}/delete")
-def delete_profile(profile_id: int):
-    # Refuse to delete the default profile — it's the fallback we stamp onto
-    # imports when no profile is picked, so something has to keep that name.
+def delete_profile(profile_id: int, user: dict = Depends(get_current_user)):
     from .db import DEFAULT_PROFILE_NAME
     with connect() as conn:
-        row = conn.execute("SELECT name FROM profiles WHERE id = ?", (profile_id,)).fetchone()
+        row = conn.execute(
+            "SELECT name FROM profiles WHERE id = ? AND user_id = ?",
+            (profile_id, user["id"]),
+        ).fetchone()
         if row is None:
-            return RedirectResponse(url="/profiles", status_code=303)
+            return RedirectResponse(url="/settings#profiles", status_code=303)
         if row["name"] == DEFAULT_PROFILE_NAME:
             return RedirectResponse(
-                url="/profiles?error=Cannot+delete+the+default+profile",
+                url="/settings?error=Cannot+delete+the+default+profile#profiles",
                 status_code=303,
             )
-        # ON DELETE SET NULL on the FK leaves transactions orphaned, which the
-        # dashboard filter then shows in the combined view only. Re-stamp to
-        # the default profile instead so they stay visible on a per-profile view.
         default = conn.execute(
-            "SELECT id FROM profiles WHERE name = ?", (DEFAULT_PROFILE_NAME,)
+            "SELECT id FROM profiles WHERE name = ? AND user_id = ?",
+            (DEFAULT_PROFILE_NAME, user["id"]),
         ).fetchone()
         conn.execute(
             "UPDATE transactions SET profile_id = ? WHERE profile_id = ?",
             (default["id"], profile_id),
         )
         conn.execute("DELETE FROM profiles WHERE id = ?", (profile_id,))
-    return RedirectResponse(url="/profiles", status_code=303)
+    return RedirectResponse(url="/settings#profiles", status_code=303)
+
+
+@app.post("/settings/password")
+def change_password(
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+    user: dict = Depends(get_current_user),
+):
+    if new_password != confirm_password:
+        return RedirectResponse(
+            url="/settings?error=New+passwords+do+not+match#account", status_code=303,
+        )
+    if len(new_password) < 8:
+        return RedirectResponse(
+            url="/settings?error=Password+must+be+at+least+8+characters#account",
+            status_code=303,
+        )
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT password_hash FROM users WHERE id = ?", (user["id"],)
+        ).fetchone()
+        if not verify_password(current_password, row["password_hash"]):
+            return RedirectResponse(
+                url="/settings?error=Current+password+is+incorrect#account",
+                status_code=303,
+            )
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (hash_password(new_password), user["id"]),
+        )
+    return RedirectResponse(
+        url="/settings?success=Password+updated#account", status_code=303,
+    )
+
+
+@app.post("/settings/currency")
+def change_currency(
+    currency: str = Form(...),
+    user: dict = Depends(get_current_user),
+):
+    cur = currency.strip().upper()
+    if not cur or len(cur) > 3:
+        return RedirectResponse(
+            url="/settings?error=Invalid+currency+code#account", status_code=303,
+        )
+    with connect() as conn:
+        conn.execute(
+            "UPDATE users SET default_currency = ? WHERE id = ?", (cur, user["id"]),
+        )
+    return RedirectResponse(
+        url="/settings?success=Default+currency+set+to+" + cur + "#account",
+        status_code=303,
+    )
+
+
+@app.get("/settings/export")
+def export_csv(user: dict = Depends(get_current_user)):
+    import csv
+    import io
+    with connect() as conn:
+        rows = conn.execute(
+            """SELECT t.date, t.amount, t.currency, t.description, t.vendor,
+                      t.category, t.op_type, t.source, t.source_bank,
+                      p.name AS profile
+               FROM transactions t
+               LEFT JOIN profiles p ON p.id = t.profile_id
+               WHERE t.profile_id IN (SELECT id FROM profiles WHERE user_id = ?)
+               ORDER BY t.date DESC, t.id DESC""",
+            (user["id"],),
+        ).fetchall()
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["date", "amount", "currency", "description", "vendor",
+                     "category", "op_type", "source", "source_bank", "profile"])
+    for r in rows:
+        writer.writerow([r["date"], r["amount"], r["currency"], r["description"],
+                         r["vendor"], r["category"], r["op_type"], r["source"],
+                         r["source_bank"], r["profile"]])
+    from fastapi.responses import StreamingResponse
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=moneypit-export.csv"},
+    )
+
+
+@app.post("/settings/delete-transactions")
+def delete_all_transactions(user: dict = Depends(get_current_user)):
+    with connect() as conn:
+        conn.execute(
+            "DELETE FROM transactions WHERE profile_id IN "
+            "(SELECT id FROM profiles WHERE user_id = ?)",
+            (user["id"],),
+        )
+    return RedirectResponse(
+        url="/settings?success=All+transactions+deleted#data", status_code=303,
+    )
+
+
+@app.post("/settings/delete-account")
+def delete_account(request: Request, user: dict = Depends(get_current_user)):
+    with connect() as conn:
+        conn.execute(
+            "DELETE FROM transactions WHERE profile_id IN "
+            "(SELECT id FROM profiles WHERE user_id = ?)",
+            (user["id"],),
+        )
+        conn.execute("DELETE FROM profiles WHERE user_id = ?", (user["id"],))
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
+        conn.execute("DELETE FROM users WHERE id = ?", (user["id"],))
+    resp = RedirectResponse(url="/login", status_code=303)
+    resp.delete_cookie(COOKIE_NAME)
+    return resp

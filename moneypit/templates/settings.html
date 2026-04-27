@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% if error %}
+  <div class="card flash-error" style="margin-bottom: 1.5rem;">
+    <span style="display:inline-flex;align-items:center;gap:0.4rem;">
+      <i data-lucide="alert-circle" style="width:16px;height:16px;"></i>
+      {{ error }}
+    </span>
+  </div>
+{% elif success %}
+  <div class="card flash-card" style="margin-bottom: 1.5rem;">
+    <span style="display:inline-flex;align-items:center;gap:0.4rem;">
+      <i data-lucide="check-circle" style="width:16px;height:16px;color:var(--success);"></i>
+      {{ success }}
+    </span>
+  </div>
+{% endif %}
+
+{# ── Tab navigation ────────────────────────────────── #}
+<div class="settings-tabs" style="display:flex;gap:0.25rem;margin-bottom:1.5rem;">
+  <a href="#account" class="settings-tab active" data-tab="account">
+    <i data-lucide="user" style="width:14px;height:14px;"></i> Account
+  </a>
+  <a href="#profiles" class="settings-tab" data-tab="profiles">
+    <i data-lucide="users" style="width:14px;height:14px;"></i> Profiles
+  </a>
+  <a href="#data" class="settings-tab" data-tab="data">
+    <i data-lucide="database" style="width:14px;height:14px;"></i> Data
+  </a>
+</div>
+
+{# ── Account section ──────────────────────────────── #}
+<div class="settings-panel" id="panel-account">
+
+  <div class="card" style="margin-bottom:1.25rem;">
+    <h2><i data-lucide="mail"></i> Email</h2>
+    <p style="font-size:0.95rem;">{{ user.email }}</p>
+  </div>
+
+  <div class="card" style="margin-bottom:1.25rem;">
+    <h2><i data-lucide="lock"></i> Change password</h2>
+    <form method="post" action="/settings/password" class="settings-form">
+      <label>
+        Current password
+        <input type="password" name="current_password" required>
+      </label>
+      <label>
+        New password
+        <input type="password" name="new_password" required minlength="8">
+      </label>
+      <label>
+        Confirm new password
+        <input type="password" name="confirm_password" required minlength="8">
+      </label>
+      <button type="submit"><span style="display:inline-flex;align-items:center;gap:0.3rem;"><i data-lucide="save" style="width:14px;height:14px;"></i> Update password</span></button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2><i data-lucide="circle-dollar-sign"></i> Default currency</h2>
+    <form method="post" action="/settings/currency" class="settings-form" style="flex-direction:row;align-items:flex-end;gap:0.75rem;">
+      <label>
+        Currency
+        <input type="text" name="currency" value="{{ default_currency }}" maxlength="3" style="width:80px;text-transform:uppercase;">
+      </label>
+      <button type="submit"><span style="display:inline-flex;align-items:center;gap:0.3rem;"><i data-lucide="save" style="width:14px;height:14px;"></i> Save</span></button>
+    </form>
+  </div>
+
+</div>
+
+{# ── Profiles section ───────────────────────────��─── #}
+<div class="settings-panel" id="panel-profiles" style="display:none;">
+
+  <div class="card">
+    <h2><i data-lucide="users"></i> Profiles</h2>
+    <p class="muted" style="font-size: 0.85rem; margin-bottom: 1rem;">
+      Profiles tag transactions with whose account they came from — useful for a shared
+      household budget where each partner imports their own bank CSVs.
+    </p>
+
+    {% for p in profiles %}
+      <div class="profile-row fade-in-up" style="animation-delay: {{ loop.index0 * 0.05 }}s;">
+        <span class="swatch" style="background: {{ p.color or '#94a3b8' }};"></span>
+        <span class="name">{{ p.name }}</span>
+        <span class="count">{{ p.tx_count }} transaction{% if p.tx_count != 1 %}s{% endif %}</span>
+        {% if p.name != default_name %}
+          <form action="/profiles/{{ p.id }}/delete" method="post"
+                onsubmit="return confirm('Delete profile {{ p.name }}? Its transactions will be re-tagged to {{ default_name }}.');">
+            <button type="submit" class="danger"><span style="display:inline-flex;align-items:center;gap:0.2rem;"><i data-lucide="trash-2" style="width:11px;height:11px;"></i> Delete</span></button>
+          </form>
+        {% else %}
+          <span class="count" title="Default profile"><i data-lucide="shield" style="width:12px;height:12px;vertical-align:middle;"></i> default</span>
+        {% endif %}
+      </div>
+    {% endfor %}
+
+    <form action="/profiles" method="post" class="profile-form">
+      <label>
+        Name
+        <input type="text" name="name" placeholder="e.g. Partner" required>
+      </label>
+      <label>
+        Color
+        <input type="color" name="color" value="#f472b6">
+      </label>
+      <button type="submit"><span style="display:inline-flex;align-items:center;gap:0.3rem;"><i data-lucide="user-plus" style="width:14px;height:14px;"></i> Add profile</span></button>
+    </form>
+  </div>
+
+</div>
+
+{# ── Data section ──────────────────────────────────── #}
+<div class="settings-panel" id="panel-data" style="display:none;">
+
+  <div class="card" style="margin-bottom:1.25rem;">
+    <h2><i data-lucide="download"></i> Export data</h2>
+    <p class="muted" style="font-size: 0.85rem; margin-bottom: 1rem;">
+      Download all your transactions as a CSV file.
+    </p>
+    <a href="/settings/export" class="export-btn">
+      <span style="display:inline-flex;align-items:center;gap:0.3rem;">
+        <i data-lucide="file-down" style="width:14px;height:14px;"></i> Export CSV
+      </span>
+    </a>
+  </div>
+
+  <div class="card" style="border-color: var(--danger); border-style: dashed;">
+    <h2 style="color:var(--danger);"><i data-lucide="alert-triangle"></i> Danger zone</h2>
+    <p class="muted" style="font-size: 0.85rem; margin-bottom: 1rem;">
+      These actions are irreversible. Proceed with caution.
+    </p>
+    <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+      <form method="post" action="/settings/delete-transactions"
+            onsubmit="return confirm('Delete ALL transactions? This cannot be undone.');">
+        <button type="submit" class="danger-btn">
+          <span style="display:inline-flex;align-items:center;gap:0.3rem;">
+            <i data-lucide="trash-2" style="width:14px;height:14px;"></i> Delete all transactions
+          </span>
+        </button>
+      </form>
+      <form method="post" action="/settings/delete-account"
+            onsubmit="return confirm('Delete your account and ALL data? This cannot be undone.');">
+        <button type="submit" class="danger-btn">
+          <span style="display:inline-flex;align-items:center;gap:0.3rem;">
+            <i data-lucide="user-x" style="width:14px;height:14px;"></i> Delete account
+          </span>
+        </button>
+      </form>
+    </div>
+  </div>
+
+</div>
+
+<style>
+  .settings-tabs {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.35rem;
+    display: inline-flex;
+    box-shadow: var(--shadow);
+  }
+  .settings-tab {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.5rem 1rem; border-radius: var(--radius-sm);
+    font-size: 0.85rem; font-weight: 500;
+    color: var(--muted); text-decoration: none;
+    transition: all var(--transition);
+  }
+  .settings-tab:hover { color: var(--text); background: var(--accent-subtle); }
+  .settings-tab.active {
+    color: var(--btn-fg); background: var(--accent);
+    box-shadow: 0 2px 8px var(--accent-glow);
+  }
+  .settings-form {
+    display: flex; flex-direction: column; gap: 0.9rem; max-width: 400px; margin-top: 0.75rem;
+  }
+  .settings-form label {
+    display: flex; flex-direction: column; gap: 0.3rem;
+    font-size: 0.8rem; color: var(--muted); font-weight: 500;
+  }
+  .settings-form input {
+    background: var(--input-bg); color: var(--text); border: 1px solid var(--border-strong);
+    padding: 0.5rem 0.65rem; border-radius: var(--radius-xs); font-size: 0.9rem;
+    transition: all var(--transition);
+  }
+  .settings-form input:focus {
+    border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+  .settings-form button, .export-btn {
+    background: var(--accent); color: var(--btn-fg); border: 0;
+    padding: 0.5rem 1.2rem; border-radius: var(--radius-sm); font-weight: 600; cursor: pointer;
+    font-size: 0.85rem; align-self: flex-start; text-decoration: none; display: inline-block;
+    transition: all var(--transition);
+  }
+  .settings-form button:hover, .export-btn:hover {
+    background: var(--accent-hover); transform: translateY(-1px);
+    box-shadow: 0 4px 12px var(--accent-glow);
+  }
+  .danger-btn {
+    background: var(--danger-subtle); color: var(--danger);
+    border: 1px solid var(--danger); border-radius: var(--radius-sm);
+    padding: 0.5rem 1.2rem; font-weight: 600; cursor: pointer;
+    font-size: 0.85rem; font-family: inherit;
+    transition: all var(--transition);
+  }
+  .danger-btn:hover {
+    background: var(--danger); color: var(--btn-fg);
+    transform: translateY(-1px); box-shadow: 0 4px 12px rgba(248, 113, 113, 0.3);
+  }
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  lucide.createIcons();
+
+  var tabs = document.querySelectorAll('.settings-tab');
+  var panels = document.querySelectorAll('.settings-panel');
+
+  function activate(tabName) {
+    tabs.forEach(function(t) {
+      t.classList.toggle('active', t.dataset.tab === tabName);
+    });
+    panels.forEach(function(p) {
+      p.style.display = p.id === 'panel-' + tabName ? 'block' : 'none';
+    });
+    history.replaceState(null, '', '#' + tabName);
+  }
+
+  tabs.forEach(function(tab) {
+    tab.addEventListener('click', function(e) {
+      e.preventDefault();
+      activate(this.dataset.tab);
+      lucide.createIcons();
+    });
+  });
+
+  // Activate tab from URL hash
+  var hash = location.hash.replace('#', '');
+  if (hash && document.getElementById('panel-' + hash)) {
+    activate(hash);
+  }
+});
+</script>
+
+{% endblock %}

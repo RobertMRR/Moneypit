@@ -2,7 +2,7 @@
 {% block content %}
 
 <div class="card">
-  <h2>Rules · {{ rules|length }}</h2>
+  <h2><i data-lucide="settings-2"></i> Rules · {{ rules|length }}</h2>
   <p class="muted" style="margin-top: -0.5rem; font-size: 0.85rem;">
     Patterns are case- and diacritic-insensitive substring matches. Lower priority wins ties.
   </p>
@@ -17,8 +17,13 @@
     {% endfor %}
   </table>
   {% else %}
-  <p class="muted">No rules yet.</p>
+  <div class="empty-state">
+    <i data-lucide="settings-2" style="width:40px;height:40px;"></i>
+    <p>No rules yet. Categorize a transaction with "remember" checked to create one.</p>
+  </div>
   {% endif %}
 </div>
+
+<script>document.addEventListener('DOMContentLoaded', function() { lucide.createIcons(); });</script>
 
 {% endblock %}

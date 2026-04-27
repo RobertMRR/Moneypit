@@ -19,11 +19,12 @@ credentials.json
 *.key
 
 # Databases & user data
-moneypit.db
-moneypit.db-journal
-moneypit.db-wal
-moneypit.db-shm
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
 data/
+uploads/
 
 # Bank exports — never commit real financial data
 *.csv
@@ -37,6 +38,10 @@ data/
 # IDE / OS
 .vscode/
 .idea/
+.claude/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Logs
+*.log

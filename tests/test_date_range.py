@@ -66,15 +66,17 @@ def test_dashboard_respects_date_range(tmp_db):
         ("2026-04-10",  -200.0, "BIEDRONKA", "Groceries"),
     ]
     with tmp_db.connect() as conn:
+        default_pid = conn.execute("SELECT id FROM profiles WHERE name = 'Me'").fetchone()["id"]
         for i, (d, amt, desc, cat) in enumerate(rows):
             conn.execute(
                 """INSERT INTO transactions
-                   (date, amount, currency, description, vendor, category, source, hash)
-                   VALUES (?, ?, 'PLN', ?, ?, ?, 'csv', ?)""",
-                (d, amt, desc, desc, cat, f"h{i}"),
+                   (date, amount, currency, description, vendor, category, source, profile_id, hash)
+                   VALUES (?, ?, 'PLN', ?, ?, ?, 'csv', ?, ?)""",
+                (d, amt, desc, desc, cat, default_pid, f"h{i}"),
             )
 
-    client = TestClient(moneypit.main.app)
+    from tests.conftest import create_test_user
+    client = TestClient(moneypit.main.app, cookies=create_test_user(tmp_db))
     r = client.get("/?from=2026-03-01&to=2026-03-31")
     assert r.status_code == 200
     assert "5000.00 PLN" in r.text  # income visible

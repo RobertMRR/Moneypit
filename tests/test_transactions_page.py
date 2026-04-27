@@ -23,6 +23,7 @@ def client(monkeypatch):
     # Seed a predictable range of transactions so we can test filtering +
     # pagination without re-seeding in every test.
     with db.connect() as conn:
+        default_pid = conn.execute("SELECT id FROM profiles WHERE name = 'Me'").fetchone()["id"]
         for i in range(120):
             d = f"2026-0{1 + i % 3}-{1 + (i % 28):02d}"  # spread across Jan-Mar
             amt = -10.0 - i  # negative, unique
@@ -30,15 +31,18 @@ def client(monkeypatch):
             cat = "Groceries" if i % 3 == 0 else "Subscriptions"
             conn.execute(
                 """INSERT INTO transactions
-                   (date, amount, currency, description, vendor, category, source, hash)
-                   VALUES (?, ?, 'PLN', ?, ?, ?, 'csv', ?)""",
-                (d, amt, vendor, vendor, cat, f"h{i}"),
+                   (date, amount, currency, description, vendor, category, source, profile_id, hash)
+                   VALUES (?, ?, 'PLN', ?, ?, ?, 'csv', ?, ?)""",
+                (d, amt, vendor, vendor, cat, default_pid, f"h{i}"),
             )
+
+    from tests.conftest import create_test_user
+    cookies = create_test_user(db)
 
     import moneypit.main
     importlib.reload(moneypit.main)
     from fastapi.testclient import TestClient
-    yield TestClient(moneypit.main.app)
+    yield TestClient(moneypit.main.app, cookies=cookies)
     Path(path).unlink(missing_ok=True)
 
 
@@ -94,11 +98,13 @@ def test_inline_categorize_still_works_on_transactions_page(client):
     # appears on page 1 regardless of seed ordering.
     import moneypit.db as db
     with db.connect() as conn:
+        default_pid = conn.execute("SELECT id FROM profiles WHERE name = 'Me'").fetchone()["id"]
         conn.execute(
             """INSERT INTO transactions
-               (date, amount, currency, description, vendor, category, source, hash)
+               (date, amount, currency, description, vendor, category, source, profile_id, hash)
                VALUES ('2026-04-15', -50.0, 'PLN', 'MYSTERY SHOP', 'MYSTERY SHOP',
-                       'Uncategorized', 'csv', 'mysteryhash')"""
+                       'Uncategorized', 'csv', ?, 'mysteryhash')""",
+            (default_pid,),
         )
         tx_id = conn.execute("SELECT id FROM transactions WHERE hash = 'mysteryhash'").fetchone()["id"]
 

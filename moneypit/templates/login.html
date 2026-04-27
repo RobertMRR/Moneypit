@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block nav %}{% endblock %}
+{% block user_actions %}{% endblock %}
+
+{% block content %}
+<div class="auth-wrapper">
+  <div class="card">
+    <div style="text-align:center;margin-bottom:0.5rem;">
+      <i data-lucide="wallet" style="width:36px;height:36px;color:var(--accent);"></i>
+    </div>
+    <h2>Sign in to Moneypit</h2>
+    {% if error %}
+    <p style="color:var(--danger);font-size:0.85rem;text-align:center;margin-top:-0.5rem;display:flex;align-items:center;justify-content:center;gap:0.3rem;">
+      <i data-lucide="alert-circle" style="width:14px;height:14px;"></i> {{ error }}
+    </p>
+    {% endif %}
+    <form method="post" action="/login" class="auth-form">
+      <label>
+        Email
+        <input type="email" name="email" required autofocus placeholder="you@example.com">
+      </label>
+      <label>
+        Password
+        <input type="password" name="password" required placeholder="••••••••">
+      </label>
+      <button type="submit"><span style="display:inline-flex;align-items:center;gap:0.4rem;"><i data-lucide="log-in" style="width:16px;height:16px;"></i> Sign in</span></button>
+    </form>
+    <p class="auth-footer">
+      No account? <a href="/register">Create one</a>
+    </p>
+  </div>
+</div>
+<script>document.addEventListener('DOMContentLoaded', function() { lucide.createIcons(); });</script>
+{% endblock %}

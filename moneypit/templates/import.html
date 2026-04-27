@@ -3,24 +3,33 @@
 
 {% if imported is not none %}
   <div class="card flash-card" style="margin-bottom: 1.5rem;">
-    Imported {{ imported }} transaction{% if imported != 1 %}s{% endif %} from
-    <strong>{{ bank }}</strong>
-    {% if skipped %}· skipped {{ skipped }} duplicate{% if skipped != 1 %}s{% endif %}{% endif %}.
+    <span style="display:inline-flex;align-items:center;gap:0.4rem;">
+      <i data-lucide="check-circle" style="width:16px;height:16px;color:var(--success);"></i>
+      Imported {{ imported }} transaction{% if imported != 1 %}s{% endif %} from
+      <strong>{{ bank }}</strong>
+      {% if skipped %}· skipped {{ skipped }} duplicate{% if skipped != 1 %}s{% endif %}{% endif %}.
+    </span>
   </div>
 {% elif added %}
   <div class="card flash-card" style="margin-bottom: 1.5rem;">
-    Transaction added.
+    <span style="display:inline-flex;align-items:center;gap:0.4rem;">
+      <i data-lucide="check-circle" style="width:16px;height:16px;color:var(--success);"></i>
+      Transaction added.
+    </span>
   </div>
 {% elif error %}
   <div class="card flash-error" style="margin-bottom: 1.5rem;">
-    {{ error }}
+    <span style="display:inline-flex;align-items:center;gap:0.4rem;">
+      <i data-lucide="alert-circle" style="width:16px;height:16px;"></i>
+      {{ error }}
+    </span>
   </div>
 {% endif %}
 
-<div class="grid">
+<div class="grid" style="grid-template-columns: 1fr 1fr;">
 
   <div class="card">
-    <h2>Import bank CSV</h2>
+    <h2><i data-lucide="file-spreadsheet"></i> Import bank CSV</h2>
     <p class="muted" style="font-size: 0.85rem;">
       Drop an export from Pekao, ING, or mBank. Duplicate rows are skipped automatically.
     </p>
@@ -33,7 +42,7 @@
           {% endfor %}
         </select>
       {% endif %}
-      <button type="submit">Upload</button>
+      <button type="submit"><span style="display:inline-flex;align-items:center;gap:0.3rem;"><i data-lucide="upload" style="width:14px;height:14px;"></i> Upload</span></button>
     </form>
     {% if profiles|length <= 1 %}
     <p class="muted" style="font-size: 0.8rem; margin-top: 0.6rem;">
@@ -44,11 +53,46 @@
   </div>
 
   <div class="card">
-    <h2>Add transaction manually</h2>
+    <h2><i data-lucide="scan-line"></i> Scan receipt</h2>
+    <p class="muted" style="font-size: 0.85rem;">
+      Upload a photo or PDF of a receipt. AI reads the date, total, and vendor — you confirm before saving.
+    </p>
+    <form action="/import/receipt" method="post" enctype="multipart/form-data" class="import-form" id="receipt-form">
+      <input type="file" name="file" id="receipt-file" accept="image/*,.pdf" style="display:none;">
+      <input type="file" id="receipt-camera" accept="image/*" capture="environment" style="display:none;">
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+        <button type="button" id="receipt-upload-btn" style="flex:1;min-width:120px;">
+          <span style="display:inline-flex;align-items:center;gap:0.3rem;">
+            <i data-lucide="upload" style="width:14px;height:14px;"></i> Choose file
+          </span>
+        </button>
+        <button type="button" id="receipt-camera-btn" class="btn-outline" style="flex:1;min-width:120px;">
+          <span style="display:inline-flex;align-items:center;gap:0.3rem;">
+            <i data-lucide="camera" style="width:14px;height:14px;"></i> Take photo
+          </span>
+        </button>
+      </div>
+      <p id="receipt-filename" class="muted" style="font-size:0.8rem;margin:0.3rem 0 0;display:none;"></p>
+      {% if profiles|length > 1 %}
+        <select name="profile_id" title="Whose receipt is this?">
+          {% for p in profiles %}
+            <option value="{{ p.id }}">{{ p.name }}</option>
+          {% endfor %}
+        </select>
+      {% endif %}
+      <button type="submit" id="receipt-submit" disabled><span style="display:inline-flex;align-items:center;gap:0.3rem;"><i data-lucide="scan-line" style="width:14px;height:14px;"></i> Scan</span></button>
+    </form>
+    <p class="muted" style="font-size: 0.8rem; margin-top: 0.6rem;">
+      Supports JPEG, PNG, WebP, GIF, and PDF. Requires <code>ANTHROPIC_API_KEY</code>.
+    </p>
+  </div>
+
+  <div class="card" style="grid-column: 1 / -1;">
+    <h2><i data-lucide="pencil-line"></i> Add transaction manually</h2>
     <p class="muted" style="font-size: 0.85rem;">
       For cash purchases, receipts, or anything the bank doesn't see.
     </p>
-    <form action="/transactions" method="post" class="manual-form">
+    <form action="/transactions" method="post" class="manual-form" style="grid-template-columns: repeat(4, 1fr);">
       <label>
         Date
         <input type="date" name="date" value="{{ today }}" required>
@@ -101,10 +145,46 @@
         </select>
       </label>
       {% endif %}
-      <button type="submit" class="wide">Add transaction</button>
+      <button type="submit" class="wide"><span style="display:inline-flex;align-items:center;gap:0.3rem;"><i data-lucide="plus" style="width:14px;height:14px;"></i> Add transaction</span></button>
     </form>
   </div>
 
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  lucide.createIcons();
+
+  var fileInput = document.getElementById('receipt-file');
+  var cameraInput = document.getElementById('receipt-camera');
+  var uploadBtn = document.getElementById('receipt-upload-btn');
+  var cameraBtn = document.getElementById('receipt-camera-btn');
+  var submitBtn = document.getElementById('receipt-submit');
+  var filenameEl = document.getElementById('receipt-filename');
+  var form = document.getElementById('receipt-form');
+
+  if (!form) return;
+
+  function activate(chosen, other) {
+    chosen.name = 'file';
+    other.name = '';
+    other.value = '';
+    filenameEl.textContent = chosen.files[0].name;
+    filenameEl.style.display = 'block';
+    submitBtn.disabled = false;
+  }
+
+  uploadBtn.addEventListener('click', function() { fileInput.click(); });
+  cameraBtn.addEventListener('click', function() { cameraInput.click(); });
+
+  fileInput.addEventListener('change', function() {
+    if (fileInput.files.length) activate(fileInput, cameraInput);
+  });
+
+  cameraInput.addEventListener('change', function() {
+    if (cameraInput.files.length) activate(cameraInput, fileInput);
+  });
+});
+</script>
 
 {% endblock %}

@@ -74,10 +74,11 @@ def create_rule_and_recategorize(
     pattern: str,
     category: str,
     vendor: str | None = None,
+    user_id: int | None = None,
 ) -> dict:
     """
-    Insert a new rule and apply it retroactively to all transactions whose
-    (description + vendor) contains the pattern. Returns a summary.
+    Insert a new rule and apply it retroactively to matching transactions.
+    When user_id is provided, only recategorizes that user's transactions.
     """
     pattern = pattern.strip()
     if not pattern:
@@ -89,13 +90,18 @@ def create_rule_and_recategorize(
     )
     rule_id = cur.lastrowid
 
-    # Retroactively categorize matching transactions. We can't use LIKE with
-    # normalized strings, so we fetch candidates and filter in Python. This
-    # is fine — it runs once per rule creation, not per request.
     needle = _normalize(pattern)
-    rows = conn.execute(
-        "SELECT id, description, vendor FROM transactions"
-    ).fetchall()
+    if user_id is not None:
+        rows = conn.execute(
+            """SELECT t.id, t.description, t.vendor FROM transactions t
+               JOIN profiles p ON p.id = t.profile_id
+               WHERE p.user_id = ?""",
+            (user_id,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, description, vendor FROM transactions"
+        ).fetchall()
 
     updated = 0
     for row in rows:
@@ -117,6 +123,7 @@ def update_rule_and_recategorize(
     category: str,
     vendor: str | None = None,
     priority: int | None = None,
+    user_id: int | None = None,
 ) -> dict:
     """
     Update an existing rule and re-apply categorization retroactively.
@@ -156,10 +163,18 @@ def update_rule_and_recategorize(
     params.append(rule_id)
     conn.execute(update_sql, params)
 
-    all_rows = conn.execute(
-        "SELECT id, date, amount, currency, description, vendor, category, op_type "
-        "FROM transactions"
-    ).fetchall()
+    if user_id is not None:
+        all_rows = conn.execute(
+            "SELECT t.id, t.date, t.amount, t.currency, t.description, t.vendor, t.category, t.op_type "
+            "FROM transactions t JOIN profiles p ON p.id = t.profile_id "
+            "WHERE p.user_id = ?",
+            (user_id,),
+        ).fetchall()
+    else:
+        all_rows = conn.execute(
+            "SELECT id, date, amount, currency, description, vendor, category, op_type "
+            "FROM transactions"
+        ).fetchall()
 
     changed = 0
     new_needle = _normalize(pattern)

@@ -2,11 +2,16 @@
 {% block content %}
 
 {% if error %}
-  <div class="card flash-error" style="margin-bottom: 1.5rem;">{{ error }}</div>
+  <div class="card flash-error" style="margin-bottom: 1.5rem;">
+    <span style="display:inline-flex;align-items:center;gap:0.4rem;">
+      <i data-lucide="alert-circle" style="width:16px;height:16px;"></i>
+      {{ error }}
+    </span>
+  </div>
 {% endif %}
 
 <div class="card">
-  <h2>Profiles</h2>
+  <h2><i data-lucide="users"></i> Profiles</h2>
   <p class="muted" style="font-size: 0.85rem;">
     Profiles tag transactions with whose account they came from — useful for a shared
     household budget where each partner imports their own bank CSVs. The dashboard
@@ -14,17 +19,17 @@
   </p>
 
   {% for p in profiles %}
-    <div class="profile-row">
+    <div class="profile-row fade-in-up" style="animation-delay: {{ loop.index0 * 0.05 }}s;">
       <span class="swatch" style="background: {{ p.color or '#94a3b8' }};"></span>
       <span class="name">{{ p.name }}</span>
       <span class="count">{{ p.tx_count }} transaction{% if p.tx_count != 1 %}s{% endif %}</span>
       {% if p.name != default_name %}
         <form action="/profiles/{{ p.id }}/delete" method="post"
               onsubmit="return confirm('Delete profile {{ p.name }}? Its transactions will be re-tagged to {{ default_name }}.');">
-          <button type="submit" class="danger">Delete</button>
+          <button type="submit" class="danger"><span style="display:inline-flex;align-items:center;gap:0.2rem;"><i data-lucide="trash-2" style="width:11px;height:11px;"></i> Delete</span></button>
         </form>
       {% else %}
-        <span class="count" title="Default profile — new imports fall back to this">default</span>
+        <span class="count" title="Default profile — new imports fall back to this"><i data-lucide="shield" style="width:12px;height:12px;vertical-align:middle;"></i> default</span>
       {% endif %}
     </div>
   {% endfor %}
@@ -38,8 +43,10 @@
       Color
       <input type="color" name="color" value="#f472b6">
     </label>
-    <button type="submit">Add profile</button>
+    <button type="submit"><span style="display:inline-flex;align-items:center;gap:0.3rem;"><i data-lucide="user-plus" style="width:14px;height:14px;"></i> Add profile</span></button>
   </form>
 </div>
+
+<script>document.addEventListener('DOMContentLoaded', function() { lucide.createIcons(); });</script>
 
 {% endblock %}

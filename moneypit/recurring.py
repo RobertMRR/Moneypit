@@ -13,22 +13,31 @@ from .db import connect
 Cadence = Literal["monthly", "yearly", "irregular"]
 
 
-def detect_recurring(profile_id: int | None = None) -> list[dict]:
+def detect_recurring(profile_id: int | None = None, user_id: int | None = None) -> list[dict]:
     with connect() as conn:
-        if profile_id is None:
-            rows = conn.execute(
-                """SELECT date, amount, vendor, description, category
-                   FROM transactions
-                   WHERE amount < 0 AND vendor IS NOT NULL
-                   ORDER BY vendor, date"""
-            ).fetchall()
-        else:
+        if profile_id is not None:
             rows = conn.execute(
                 """SELECT date, amount, vendor, description, category
                    FROM transactions
                    WHERE amount < 0 AND vendor IS NOT NULL AND profile_id = ?
                    ORDER BY vendor, date""",
                 (profile_id,),
+            ).fetchall()
+        elif user_id is not None:
+            rows = conn.execute(
+                """SELECT date, amount, vendor, description, category
+                   FROM transactions
+                   WHERE amount < 0 AND vendor IS NOT NULL
+                     AND profile_id IN (SELECT id FROM profiles WHERE user_id = ?)
+                   ORDER BY vendor, date""",
+                (user_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT date, amount, vendor, description, category
+                   FROM transactions
+                   WHERE amount < 0 AND vendor IS NOT NULL
+                   ORDER BY vendor, date"""
             ).fetchall()
 
     by_vendor: dict[str, list[dict]] = defaultdict(list)

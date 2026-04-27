@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div style="max-width: 640px; margin: 0 auto;">
+
+  <div class="card" style="margin-bottom: 1.5rem;">
+    <h2><i data-lucide="scan-line"></i> Confirm scanned receipt</h2>
+    <p class="muted" style="font-size: 0.85rem;">
+      Review the extracted values and correct anything that looks wrong.
+    </p>
+
+    <form action="/transactions" method="post" class="manual-form">
+      <input type="hidden" name="source" value="receipt">
+
+      <label>
+        Date
+        <input type="date" name="date" value="{{ data.date or today }}" required>
+      </label>
+      <label>
+        Amount
+        <input type="number" name="amount" step="0.01" min="0"
+               value="{{ '%.2f'|format(data.total) if data.total else '' }}"
+               placeholder="0.00" required>
+      </label>
+      <label>
+        Direction
+        <select name="direction">
+          <option value="spend" selected>Expense</option>
+          <option value="income">Income</option>
+        </select>
+      </label>
+      <label>
+        Currency
+        <input type="text" name="currency" value="{{ data.currency }}" maxlength="3">
+      </label>
+      <label class="wide">
+        Vendor
+        <input type="text" name="vendor" value="{{ data.vendor or '' }}" placeholder="e.g. Biedronka">
+      </label>
+      <label class="wide">
+        Description
+        <input type="text" name="description" value="{{ data.items or '' }}" placeholder="optional, e.g. weekly groceries">
+      </label>
+      <label class="wide">
+        Category
+        <select name="category"
+                onchange="const nxt = this.parentElement.nextElementSibling; nxt.style.display = this.value === '__new__' ? 'flex' : 'none'; if (this.value === '__new__') nxt.querySelector('input').focus();">
+          <option value="">Auto-detect from rules</option>
+          {% for c in categories %}
+            <option value="{{ c }}">{{ c }}</option>
+          {% endfor %}
+          <option value="__new__">+ New category…</option>
+        </select>
+      </label>
+      <label class="wide" style="display: none;">
+        New category name
+        <input type="text" name="category_new" placeholder="e.g. Pets">
+      </label>
+      {% if profiles|length > 1 %}
+      <label class="wide">
+        Profile
+        <select name="profile_id">
+          {% for p in profiles %}
+            <option value="{{ p.id }}" {% if p.id|string == profile_id %}selected{% endif %}>{{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endif %}
+      <button type="submit" class="wide"><span style="display:inline-flex;align-items:center;gap:0.3rem;"><i data-lucide="check" style="width:14px;height:14px;"></i> Save transaction</span></button>
+    </form>
+  </div>
+
+</div>
+
+<script>document.addEventListener('DOMContentLoaded', function() { lucide.createIcons(); });</script>
+
+{% endblock %}

@@ -1,8 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
 
-{# Shared filter state for preset links — preserve category + search + profile
-   + sort when clicking a preset so you don't lose them. #}
 {% macro preset_href(pfrom, pto) -%}
   {% set parts = [] -%}
   {% if pfrom %}{% set _ = parts.append('from=' ~ pfrom) %}{% endif %}
@@ -17,9 +15,6 @@
   /transactions{% if parts %}?{{ parts|join('&') }}{% endif %}
 {%- endmacro %}
 
-{# Clickable column header. Clicking toggles dir if the column is already
-   active, otherwise switches to that column with a sensible default
-   direction (desc for date/amount, asc for vendor/category). #}
 {% macro sort_header(key, label, align='left') -%}
   {% if sort == key %}
     {% set next_dir = 'asc' if dir == 'desc' else 'desc' %}
@@ -90,8 +85,6 @@
 </div>
 {% endif %}
 
-{# Kind (Income / Spent) filter. Same pill-row pattern as the profile bar;
-   "All" is default and stays selected for the combined view. #}
 {% set kind_base_parts = ['from=' ~ range_from, 'to=' ~ range_to] %}
 {% if category %}{% set _ = kind_base_parts.append('category=' ~ category) %}{% endif %}
 {% if q %}{% set _ = kind_base_parts.append('q=' ~ q) %}{% endif %}
@@ -130,7 +123,7 @@
       <input type="hidden" name="dir" value="{{ dir }}">
     {% endif %}
     <label>
-      Category
+      <i data-lucide="tag" style="width:12px;height:12px;display:inline;vertical-align:middle;margin-right:2px;"></i> Category
       <select name="category">
         <option value="">All</option>
         {% for c in categories %}
@@ -139,7 +132,7 @@
       </select>
     </label>
     <label>
-      Search
+      <i data-lucide="search" style="width:12px;height:12px;display:inline;vertical-align:middle;margin-right:2px;"></i> Search
       <input type="search" name="q" value="{{ q }}" placeholder="vendor or description">
     </label>
     <button type="submit">Filter</button>
@@ -151,21 +144,21 @@
 
 <div class="stats" style="margin-bottom: 1.5rem;">
   <div class="card">
-    <h2>Matching · {{ range_label }}</h2>
+    <h2><i data-lucide="hash"></i> Matching · {{ range_label }}</h2>
     <div class="big-number">{{ total }}</div>
   </div>
   <div class="card">
-    <h2>Income</h2>
+    <h2><i data-lucide="trending-up"></i> Income</h2>
     <div class="big-number amt-pos">{{ "%.2f"|format(sums.income) }} PLN</div>
   </div>
   <div class="card">
-    <h2>Spent</h2>
+    <h2><i data-lucide="trending-down"></i> Spent</h2>
     <div class="big-number amt-neg">{{ "%.2f"|format(sums.spent) }} PLN</div>
   </div>
 </div>
 
 <div class="card">
-  <h2>Transactions</h2>
+  <h2><i data-lucide="list"></i> Transactions</h2>
   {% if rows %}
   <table>
     <tr>
@@ -204,8 +197,13 @@
   {% endif %}
 
   {% else %}
-  <p class="muted">No transactions match these filters.</p>
+  <div class="empty-state">
+    <i data-lucide="search-x" style="width:40px;height:40px;"></i>
+    <p>No transactions match these filters.</p>
+  </div>
   {% endif %}
 </div>
+
+<script>document.addEventListener('DOMContentLoaded', function() { lucide.createIcons(); });</script>
 
 {% endblock %}

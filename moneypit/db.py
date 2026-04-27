@@ -6,10 +6,26 @@ from pathlib import Path
 DB_PATH = Path(os.environ.get("MONEYPIT_DB", "moneypit.db"))
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    email         TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    password_hash TEXT NOT NULL,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    token      TEXT PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
 CREATE TABLE IF NOT EXISTS profiles (
-    id    INTEGER PRIMARY KEY AUTOINCREMENT,
-    name  TEXT NOT NULL UNIQUE,
-    color TEXT
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    name    TEXT NOT NULL,
+    color   TEXT,
+    user_id INTEGER REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS transactions (
@@ -241,10 +257,48 @@ def _ensure_profile_column(conn: sqlite3.Connection) -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tx_profile ON transactions(profile_id)")
 
 
+def _ensure_user_currency(conn: sqlite3.Connection) -> None:
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
+    if "default_currency" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN default_currency TEXT NOT NULL DEFAULT 'PLN'")
+
+
+def _ensure_user_id_on_profiles(conn: sqlite3.Connection) -> None:
+    """Add `user_id` to `profiles` and drop the stale UNIQUE on `name`.
+
+    Old schema had `name TEXT NOT NULL UNIQUE` — global uniqueness. With
+    multi-user auth, each user needs their own "Me" profile, so uniqueness
+    must go. SQLite can't DROP CONSTRAINT, so we rebuild the table."""
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(profiles)")}
+    if "user_id" not in cols:
+        conn.execute("ALTER TABLE profiles ADD COLUMN user_id INTEGER REFERENCES users(id)")
+
+    # Check if the old UNIQUE constraint on name still exists by inspecting
+    # the index list. SQLite auto-names it "sqlite_autoindex_profiles_1".
+    has_unique = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='index' AND tbl_name='profiles' "
+        "AND name LIKE 'sqlite_autoindex_profiles_%'"
+    ).fetchone()
+    if has_unique:
+        conn.execute("CREATE TABLE profiles_new ("
+                     "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                     "name TEXT NOT NULL, "
+                     "color TEXT, "
+                     "user_id INTEGER REFERENCES users(id))")
+        conn.execute("INSERT INTO profiles_new (id, name, color, user_id) "
+                     "SELECT id, name, color, user_id FROM profiles")
+        conn.execute("DROP TABLE profiles")
+        conn.execute("ALTER TABLE profiles_new RENAME TO profiles")
+
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_profiles_user ON profiles(user_id)")
+
+
 def init_db() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
         _ensure_profile_column(conn)
+        _ensure_user_id_on_profiles(conn)
+        _ensure_user_currency(conn)
 
         existing = {row["name"] for row in conn.execute("SELECT name FROM categories")}
         for name, color in DEFAULT_CATEGORIES:

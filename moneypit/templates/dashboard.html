@@ -1,7 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
 
-{# Preserve profile selection across date-preset clicks. #}
 {% set prof_qs = '&profile=' ~ profile_id if profile_id else '' %}
 
 <div class="card range-bar" style="margin-bottom: 1.5rem;">
@@ -46,15 +45,15 @@
 
 <div class="stats" style="margin-bottom: 1.5rem;">
   <div class="card">
-    <h2>Income · {{ range_label }}</h2>
+    <h2><i data-lucide="trending-up"></i> Income · {{ range_label }}</h2>
     <div class="big-number amt-pos">{{ "%.2f"|format(total_income) }} PLN</div>
   </div>
   <div class="card">
-    <h2>Spent · {{ range_label }}</h2>
+    <h2><i data-lucide="trending-down"></i> Spent · {{ range_label }}</h2>
     <div class="big-number amt-neg">{{ "%.2f"|format(total_spend) }} PLN</div>
   </div>
   <div class="card">
-    <h2>Net · {{ range_label }}</h2>
+    <h2><i data-lucide="scale"></i> Net · {{ range_label }}</h2>
     <div class="big-number {{ 'amt-pos' if net >= 0 else 'amt-neg' }}">
       {{ "%+.2f"|format(net) }} PLN
     </div>
@@ -64,56 +63,94 @@
 <div class="grid">
 
   <div class="card">
-    <h2>By category</h2>
+    <h2><i data-lucide="pie-chart"></i> By category</h2>
     {% if by_category %}
-    <table>
-      <tr><th>Category</th><th style="text-align:right">Spent</th><th style="text-align:right">#</th></tr>
+      {% set max_total = by_category[0].total if by_category else 1 %}
+
+      {# Donut chart #}
+      {% set colors = ['#60a5fa', '#a78bfa', '#f472b6', '#fb923c', '#4ade80', '#fbbf24', '#38bdf8', '#e879f9', '#34d399', '#f87171'] %}
+      {% set total_spent = by_category | sum(attribute='total') %}
+      <div class="donut-wrap" style="margin-bottom: 1.25rem;">
+        <div class="donut" style="background: conic-gradient(
+          {% for row in by_category %}
+            {{ colors[loop.index0 % colors|length] }} {{ (by_category[:loop.index0] | sum(attribute='total') / total_spent * 100) if loop.index0 > 0 else 0 }}%
+            {{ colors[loop.index0 % colors|length] }} {{ (by_category[:loop.index0 + 1] | sum(attribute='total') / total_spent * 100) }}%{{ ',' if not loop.last }}
+          {% endfor %}
+        );">
+          <div class="donut-center" style="width: 80px; height: 80px; background: var(--card); border-radius: 50%; margin: auto; position: absolute; inset: 0; margin: 30px;">
+            <strong>{{ "%.0f"|format(total_spent) }}</strong>
+            <span>PLN</span>
+          </div>
+        </div>
+        <div class="donut-legend">
+          {% for row in by_category[:8] %}
+          <div class="donut-legend-item">
+            <span class="donut-legend-dot" style="background: {{ colors[loop.index0 % colors|length] }};"></span>
+            <span>{{ row.category or "Uncategorized" }}</span>
+            <span style="margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums;">{{ "%.0f"|format(row.total) }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      {# Bar chart #}
       {% for row in by_category %}
-      <tr>
-        <td>{{ row.category or "Uncategorized" }}</td>
-        <td style="text-align:right">{{ "%.2f"|format(row.total) }}</td>
-        <td style="text-align:right">{{ row.n }}</td>
-      </tr>
+      <div class="cat-bar-row fade-in-up" style="animation-delay: {{ loop.index0 * 0.05 }}s;">
+        <span class="cat-bar-label">{{ row.category or "Uncategorized" }}</span>
+        <div class="cat-bar-track">
+          <div class="cat-bar-fill" style="width: {{ (row.total / max_total * 100) if max_total else 0 }}%; background: {{ colors[loop.index0 % colors|length] }};"></div>
+        </div>
+        <span class="cat-bar-value">{{ "%.2f"|format(row.total) }}</span>
+      </div>
       {% endfor %}
-    </table>
     {% else %}
-    <p class="muted">No transactions yet. Import a CSV to get started.</p>
+    <div class="empty-state">
+      <i data-lucide="inbox" style="width:40px;height:40px;"></i>
+      <p>No transactions yet. <a href="/import">Import a CSV</a> to get started.</p>
+    </div>
     {% endif %}
   </div>
 
   <div class="card">
-    <h2>Top vendors</h2>
+    <h2><i data-lucide="store"></i> Top vendors</h2>
     {% if top_vendors %}
-    <table>
-      <tr><th>Vendor</th><th style="text-align:right">Spent</th><th style="text-align:right">#</th></tr>
+      {% set max_vendor = top_vendors[0].total if top_vendors else 1 %}
+      {% set vendor_colors = ['#f472b6', '#fb923c', '#4ade80', '#60a5fa', '#a78bfa', '#fbbf24', '#38bdf8', '#e879f9', '#34d399', '#f87171'] %}
       {% for row in top_vendors %}
-      <tr>
-        <td>{{ row.vendor }}</td>
-        <td style="text-align:right">{{ "%.2f"|format(row.total) }}</td>
-        <td style="text-align:right">{{ row.n }}</td>
-      </tr>
+      <div class="cat-bar-row fade-in-up" style="animation-delay: {{ loop.index0 * 0.05 }}s;">
+        <span class="cat-bar-label">{{ row.vendor }}</span>
+        <div class="cat-bar-track">
+          <div class="cat-bar-fill" style="width: {{ (row.total / max_vendor * 100) if max_vendor else 0 }}%; background: {{ vendor_colors[loop.index0 % vendor_colors|length] }};"></div>
+        </div>
+        <span class="cat-bar-value">{{ "%.2f"|format(row.total) }} <span class="muted" style="font-size:0.7rem;">({{ row.n }})</span></span>
+      </div>
       {% endfor %}
-    </table>
     {% else %}
-    <p class="muted">No data yet.</p>
+    <div class="empty-state">
+      <i data-lucide="store" style="width:40px;height:40px;"></i>
+      <p>No data yet.</p>
+    </div>
     {% endif %}
   </div>
 
   <div class="card">
-    <h2>Recurring charges</h2>
+    <h2><i data-lucide="repeat"></i> Recurring charges</h2>
     {% if recurring %}
     <table>
       <tr><th>Vendor</th><th>Cadence</th><th style="text-align:right">Avg</th></tr>
       {% for r in recurring %}
-      <tr>
+      <tr class="fade-in-up" style="animation-delay: {{ loop.index0 * 0.05 }}s;">
         <td>{{ r.vendor }}</td>
-        <td><span class="pill">{{ r.cadence }}</span></td>
-        <td style="text-align:right">{{ "%.2f"|format(r.avg_amount) }}</td>
+        <td><span class="pill"><i data-lucide="clock" style="width:10px;height:10px;"></i> {{ r.cadence }}</span></td>
+        <td style="text-align:right" class="amt-neg">{{ "%.2f"|format(r.avg_amount) }}</td>
       </tr>
       {% endfor %}
     </table>
     {% else %}
-    <p class="muted">Need at least 2 charges from the same vendor to detect recurring.</p>
+    <div class="empty-state">
+      <i data-lucide="repeat" style="width:40px;height:40px;"></i>
+      <p>Need at least 2 charges from the same vendor to detect recurring.</p>
+    </div>
     {% endif %}
   </div>
 
@@ -121,7 +158,7 @@
 
 {% if uncategorized %}
 <div class="card" style="margin-top: 1.5rem;">
-  <h2>Needs categorizing · {{ uncategorized|length }}</h2>
+  <h2><i data-lucide="alert-triangle"></i> Needs categorizing · {{ uncategorized|length }}</h2>
   <p class="muted" style="margin-top: -0.5rem; font-size: 0.85rem;">
     Pick a category and hit Save. With "remember" checked, it saves a rule and retroactively categorizes every matching transaction.
   </p>
@@ -139,7 +176,7 @@
 {% endif %}
 
 <div class="card" style="margin-top: 1.5rem;">
-  <h2>Recent transactions</h2>
+  <h2><i data-lucide="clock"></i> Recent transactions</h2>
   {% if recent %}
   <table>
     <tr><th>Date</th><th>Vendor / Description</th><th>Category</th><th style="text-align:right">Amount</th></tr>
@@ -148,8 +185,27 @@
     {% endfor %}
   </table>
   {% else %}
-  <p class="muted">Nothing imported yet.</p>
+  <div class="empty-state">
+    <i data-lucide="inbox" style="width:40px;height:40px;"></i>
+    <p>Nothing imported yet.</p>
+  </div>
   {% endif %}
 </div>
+
+<script>
+  // Animate bar fills on load
+  document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.cat-bar-fill').forEach(function(bar) {
+      var w = bar.style.width;
+      bar.style.width = '0%';
+      requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+          bar.style.width = w;
+        });
+      });
+    });
+    lucide.createIcons();
+  });
+</script>
 
 {% endblock %}

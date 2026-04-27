@@ -19,10 +19,13 @@ def client(monkeypatch):
     importlib.reload(db)
     db.init_db()
 
+    from tests.conftest import create_test_user
+    cookies = create_test_user(db)
+
     import moneypit.main
     importlib.reload(moneypit.main)
     from fastapi.testclient import TestClient
-    yield TestClient(moneypit.main.app)
+    yield TestClient(moneypit.main.app, cookies=cookies)
     Path(path).unlink(missing_ok=True)
 
 
